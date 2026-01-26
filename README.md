@@ -3,9 +3,9 @@ Test agent driven interface.  Playing with Kanzen kankaku Dreamer [完全感覚D
 
 * **About 完全感覚Dreamer**
 
-> 完全感覚Dreamer · ONE OK ROCK
->
-> Niche Syndrome
+  > 完全感覚Dreamer · ONE OK ROCK
+  >
+  > Niche Syndrome
 
 ## Refernce
 
@@ -56,3 +56,39 @@ source .venv/bin/activate
       --browser.gatherUsageStats false \
       --server.headless true
     ```
+
+### AG-UI ADK
+
+* **Copilotkit**
+
+  ```sh
+  # create
+  npx copilotkit@latest create --name adk-ui --framework adk
+
+  # install packages
+  cd adk-ui
+  pnpm install
+
+  # windows use: source agent/.venv/Scripts/activate
+  # linux use:   source agent/.venv/bin/activate
+
+  # In new terminal, start ADK agent
+  source examples/adk-ui/agent/.venv/Scripts/activate
+  uv run examples/adk-ui/agent/main.py
+
+  # In new terminal, start AG-UI
+  cd examples/adk-ui
+  pnpm run dev:ui
+  ```
+  
+  * ADK agent host: `http://localhost:8080`
+  * AG-UI host : `http://localhost:3000`
+
+* **AG-UI**
+
+  ```sh
+  # create
+  npx create-ag-ui-app@latest --adk
+
+  # below command follows Copilotkit guide
+  ```

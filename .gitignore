@@ -1,5 +1,9 @@
 .env
+uv.lock
 *.pyc
 *.ttf
+*.svg
+*.bat
+*.sh
 
 dev-*

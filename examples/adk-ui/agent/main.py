@@ -1,9 +1,9 @@
-"""Shared State feature."""
+"""Structured Data Generation Agent."""
 
 from __future__ import annotations
 
 import json
-from typing import Dict, Optional
+from typing import Dict, Any, Optional
 
 from ag_ui_adk import ADKAgent, add_adk_fastapi_endpoint
 from dotenv import load_dotenv
@@ -19,37 +19,157 @@ from pydantic import BaseModel, Field
 load_dotenv()
 
 
-class ProverbsState(BaseModel):
-    """List of the proverbs being written."""
+class StructuredDataState(BaseModel):
+    """State for structured data generation."""
 
-    proverbs: list[str] = Field(
-        default_factory=list,
-        description="The list of already written proverbs",
+    structuredData: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="The current structured data object",
+    )
+    lastOutput: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="The last generated output",
     )
 
 
-def set_proverbs(tool_context: ToolContext, new_proverbs: list[str]) -> Dict[str, str]:
+def set_structured_data(tool_context: ToolContext, data: Dict[str, Any]) -> Dict[str, str]:
     """
-    Set the list of provers using the provided new list.
+    Set structured data in the agent state.
 
     Args:
-        "new_proverbs": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "The new list of proverbs to maintain",
+        "data": {
+            "type": "object",
+            "description": "The structured data object to store",
         }
 
     Returns:
         Dict indicating success status and message
     """
     try:
-        # Put this into a state object just to confirm the shape
-        new_state = {"proverbs": new_proverbs}
-        tool_context.state["proverbs"] = new_state["proverbs"]
-        return {"status": "success", "message": "Proverbs updated successfully"}
+        tool_context.state["structuredData"] = data
+        tool_context.state["lastOutput"] = data
+        return {"status": "success", "message": "Structured data updated successfully"}
 
     except Exception as e:
-        return {"status": "error", "message": f"Error updating proverbs: {str(e)}"}
+        return {"status": "error", "message": f"Error updating structured data: {str(e)}"}
+
+
+def generate_sample_data(tool_context: ToolContext, data_type: str) -> Dict[str, Any]:
+    """
+    Generate sample structured data of a specific type.
+    
+    Args:
+        "data_type": {
+            "type": "string",
+            "description": "Type of data to generate (e.g., 'user_profile', 'product', 'order', 'company')",
+        }
+    
+    Returns:
+        Dict containing the generated sample data
+    """
+    sample_data = {}
+    
+    if data_type.lower() == "user_profile":
+        sample_data = {
+            "id": "user_12345",
+            "name": "Alice Johnson",
+            "email": "alice.johnson@example.com",
+            "age": 28,
+            "location": {
+                "city": "San Francisco",
+                "country": "USA",
+                "timezone": "PST"
+            },
+            "preferences": {
+                "theme": "dark",
+                "language": "en",
+                "notifications": True
+            },
+            "created_at": "2024-01-15T10:30:00Z",
+            "last_login": "2024-01-27T14:22:00Z"
+        }
+    elif data_type.lower() == "product":
+        sample_data = {
+            "id": "prod_67890",
+            "name": "Wireless Headphones",
+            "description": "High-quality wireless headphones with noise cancellation",
+            "price": 199.99,
+            "currency": "USD",
+            "category": "Electronics",
+            "tags": ["audio", "wireless", "noise-cancelling"],
+            "specifications": {
+                "battery_life": "30 hours",
+                "connectivity": "Bluetooth 5.0",
+                "weight": "250g"
+            },
+            "in_stock": True,
+            "stock_quantity": 150
+        }
+    elif data_type.lower() == "order":
+        sample_data = {
+            "order_id": "ORD-2024-001",
+            "customer_id": "user_12345",
+            "items": [
+                {
+                    "product_id": "prod_67890",
+                    "name": "Wireless Headphones",
+                    "quantity": 1,
+                    "price": 199.99
+                }
+            ],
+            "total_amount": 199.99,
+            "currency": "USD",
+            "status": "processing",
+            "shipping_address": {
+                "street": "123 Main St",
+                "city": "San Francisco",
+                "state": "CA",
+                "zip": "94105",
+                "country": "USA"
+            },
+            "created_at": "2024-01-27T15:00:00Z"
+        }
+    elif data_type.lower() == "company":
+        sample_data = {
+            "company_id": "comp_456",
+            "name": "TechCorp Solutions",
+            "industry": "Software Development",
+            "founded": 2018,
+            "employees": 250,
+            "headquarters": {
+                "city": "Austin",
+                "state": "TX",
+                "country": "USA"
+            },
+            "revenue": {
+                "amount": 50000000,
+                "currency": "USD",
+                "year": 2023
+            },
+            "technologies": ["Python", "React", "AWS", "Docker"],
+            "contact": {
+                "email": "info@techcorp.com",
+                "phone": "+1-555-0123",
+                "website": "https://techcorp.com"
+            }
+        }
+    else:
+        sample_data = {
+            "type": data_type,
+            "message": f"Sample data for {data_type}",
+            "generated_at": "2024-01-27T15:00:00Z",
+            "data": {
+                "field1": "value1",
+                "field2": "value2",
+                "field3": 123
+            }
+        }
+    
+    # Store in state
+    tool_context.state["structuredData"] = sample_data
+    tool_context.state["lastOutput"] = sample_data
+    
+    return sample_data
 
 
 def get_weather(tool_context: ToolContext, location: str) -> Dict[str, str]:
@@ -59,52 +179,58 @@ def get_weather(tool_context: ToolContext, location: str) -> Dict[str, str]:
 
 def on_before_agent(callback_context: CallbackContext):
     """
-    Initialize proverbs state if it doesn't exist.
+    Initialize structured data state if it doesn't exist.
     """
-
-    if "proverbs" not in callback_context.state:
-        # Initialize with default recipe
-        default_proverbs = []
-        callback_context.state["proverbs"] = default_proverbs
+    if "structuredData" not in callback_context.state:
+        callback_context.state["structuredData"] = None
+    
+    if "lastOutput" not in callback_context.state:
+        callback_context.state["lastOutput"] = None
 
     return None
 
 
-# --- Define the Callback Function ---
-#  modifying the agent's system prompt to incude the current state of the proverbs list
 def before_model_modifier(
     callback_context: CallbackContext, llm_request: LlmRequest
 ) -> Optional[LlmResponse]:
     """Inspects/modifies the LLM request or skips the call."""
     agent_name = callback_context.agent_name
-    if agent_name == "ProverbsAgent":
-        proverbs_json = "No proverbs yet"
+    if agent_name == "StructuredDataAgent":
+        current_data = "No structured data yet"
         if (
-            "proverbs" in callback_context.state
-            and callback_context.state["proverbs"] is not None
+            "structuredData" in callback_context.state
+            and callback_context.state["structuredData"] is not None
         ):
             try:
-                proverbs_json = json.dumps(callback_context.state["proverbs"], indent=2)
+                current_data = json.dumps(callback_context.state["structuredData"], indent=2)
             except Exception as e:
-                proverbs_json = f"Error serializing proverbs: {str(e)}"
-        # --- Modification Example ---
-        # Add a prefix to the system instruction
+                current_data = f"Error serializing data: {str(e)}"
+        
+        # Add context about current state
         original_instruction = llm_request.config.system_instruction or types.Content(
             role="system", parts=[]
         )
-        prefix = f"""You are a helpful assistant for maintaining a list of proverbs.
-        This is the current state of the list of proverbs: {proverbs_json}
-        When you modify the list of proverbs (wether to add, remove, or modify one or more proverbs), use the set_proverbs tool to update the list."""
-        # Ensure system_instruction is Content and parts list exists
+        prefix = f"""You are a helpful assistant for generating and managing structured data.
+        This is the current structured data state: {current_data}
+        
+        When you need to create or update structured data, use the set_structured_data tool.
+        When asked to generate sample data, use the generate_sample_data tool with appropriate data types.
+        
+        Available data types for generate_sample_data:
+        - user_profile: Generate a sample user profile
+        - product: Generate a sample product listing
+        - order: Generate a sample order record
+        - company: Generate a sample company information
+        - Or any custom type the user requests
+        """
+        
         if not isinstance(original_instruction, types.Content):
-            # Handle case where it might be a string (though config expects Content)
             original_instruction = types.Content(
                 role="system", parts=[types.Part(text=str(original_instruction))]
             )
         if not original_instruction.parts:
             original_instruction.parts = [types.Part(text="")]
 
-        # Modify the text of the first part
         if original_instruction.parts and len(original_instruction.parts) > 0:
             modified_text = prefix + (original_instruction.parts[0].text or "")
             original_instruction.parts[0].text = modified_text
@@ -113,16 +239,13 @@ def before_model_modifier(
     return None
 
 
-# --- Define the Callback Function ---
 def simple_after_model_modifier(
     callback_context: CallbackContext, llm_response: LlmResponse
 ) -> Optional[LlmResponse]:
     """Stop the consecutive tool calling of the agent"""
     agent_name = callback_context.agent_name
-    # --- Inspection ---
-    if agent_name == "ProverbsAgent":
+    if agent_name == "StructuredDataAgent":
         if llm_response.content and llm_response.content.parts:
-            # Assuming simple text response for this example
             if (
                 llm_response.content.role == "model"
                 and llm_response.content.parts[0].text
@@ -132,59 +255,86 @@ def simple_after_model_modifier(
         elif llm_response.error_message:
             return None
         else:
-            return None  # Nothing to modify
+            return None
     return None
 
 
-proverbs_agent = LlmAgent(
-    name="ProverbsAgent",
+structured_data_agent = LlmAgent(
+    name="StructuredDataAgent",
     model="gemini-2.5-flash",
     instruction="""
-        When a user asks you to do anything regarding proverbs, you MUST use the set_proverbs tool.
+        You are a professional structured data generation assistant. Your primary job is to create, manage, and display structured data in JSON format for users.
 
-        IMPORTANT RULES ABOUT PROVERBS AND THE SET_PROVERBS TOOL:
-        1. Always use the set_proverbs tool for any proverbs-related requests
-        2. Always pass the COMPLETE LIST of proverbs to the set_proverbs tool. If the list had 5 proverbs and you removed one, you must pass the complete list of 4 remaining proverbs.
-        3. You can use existing proverbs if one is relevant to the user's request, but you can also create new proverbs as required.
-        4. Be creative and helpful in generating complete, practical proverbs
-        5. After using the tool, provide a brief summary of what you create, removed, or changed        7.
+        CORE RESPONSIBILITIES:
+        1. Generate realistic, well-structured JSON data for any requested domain
+        2. Create sample data that follows industry standards and best practices
+        3. Provide clear explanations of the data structure and its purpose
+        4. Always use appropriate tools to store and manage the generated data
 
-        Examples of when to use the set_proverbs tool:
-        - "Add a proverb about soap" → Use tool with an array containing the existing list of proverbs with the new proverb about soap at the end.
-        - "Remove the first proverb" → Use tool with an array containing the all of the existing proverbs except the first one"
-        - "Change any proverbs about cats to mention that they have 18 lives" → If no proverbs mention cats, do not use the tool. If one or more proverbs do mention cats, change them to mention cats having 18 lives, and use the tool with an array of all of the proverbs, including ones that were changed and ones that did not require changes.
+        TOOL USAGE RULES:
+        
+        FOR STRUCTURED DATA GENERATION:
+        - Use generate_sample_data for common data types: user_profile, product, order, company
+        - Use set_structured_data for custom data structures or when modifying existing data
+        - ALWAYS call the appropriate tool - never just describe what you would create
+        - After using tools, explain what was generated and its key components
 
-        Do your best to ensure proverbs plausibly make sense.
+        FOR WEATHER REQUESTS:
+        - Only use get_weather when specifically asked about weather
+        - If no location specified, use "Everywhere ever in the whole wide world"
 
+        RESPONSE PATTERN:
+        1. Acknowledge the user's request
+        2. Use the appropriate tool to generate/set the data
+        3. Explain what was created and highlight key features
+        4. Suggest potential use cases or modifications
 
-        IMPORTANT RULES ABOUT WEATHER AND THE GET_WEATHER TOOL:
-        1. Only call the get_weather tool if the user asks you for the weather in a given location.
-        2. If the user does not specify a location, you can use the location "Everywhere ever in the whole wide world"
+        EXAMPLES OF PROPER RESPONSES:
 
-        Examples of when to use the get_weather tool:
-        - "What's the weather today in Tokyo?" → Use the tool with the location "Tokyo"
-        - "Whats the weather right now" → Use the location "Everywhere ever in the whole wide world"
-        - Is it raining in London? → Use the tool with the location "London"
+        User: "Generate a user profile"
+        Response: I'll create a comprehensive user profile for you.
+        [Call generate_sample_data with "user_profile"]
+        I've generated a detailed user profile including personal information, preferences, and account details. The structure includes ID, contact info, location data, user preferences, and timestamps - perfect for user management systems.
+
+        User: "Create a product for an e-commerce site"
+        Response: I'll generate a product entry suitable for e-commerce.
+        [Call generate_sample_data with "product"]
+        Created a complete product listing with pricing, specifications, inventory status, and metadata. This structure works well for online stores and includes all essential e-commerce fields.
+
+        User: "Make a custom API response for a blog post"
+        Response: I'll create a custom blog post API response structure.
+        [Call set_structured_data with custom blog post object]
+        Generated a comprehensive blog post API response including content, metadata, author info, and engagement metrics.
+
+        QUALITY STANDARDS:
+        - Use realistic, professional sample data
+        - Include appropriate data types (strings, numbers, booleans, arrays, objects)
+        - Follow common naming conventions (camelCase for JSON)
+        - Include timestamps in ISO format
+        - Add nested objects where appropriate
+        - Ensure data relationships make logical sense
+
+        Remember: Your goal is to be helpful and proactive. Always generate the actual data using tools, don't just explain what you would create.
         """,
-    tools=[set_proverbs, get_weather],
+    tools=[set_structured_data, generate_sample_data, get_weather],
     before_agent_callback=on_before_agent,
     before_model_callback=before_model_modifier,
     after_model_callback=simple_after_model_modifier,
 )
 
 # Create ADK middleware agent instance
-adk_proverbs_agent = ADKAgent(
-    adk_agent=proverbs_agent,
+adk_structured_data_agent = ADKAgent(
+    adk_agent=structured_data_agent,
     user_id="demo_user",
     session_timeout_seconds=3600,
     use_in_memory_services=True,
 )
 
 # Create FastAPI app
-app = FastAPI(title="ADK Middleware Proverbs Agent")
+app = FastAPI(title="ADK Middleware Structured Data Agent")
 
 # Add the ADK endpoint
-add_adk_fastapi_endpoint(app, adk_proverbs_agent, path="/")
+add_adk_fastapi_endpoint(app, adk_structured_data_agent, path="/")
 
 if __name__ == "__main__":
     import os

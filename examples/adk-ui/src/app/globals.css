@@ -22,3 +22,14 @@ body,
 html {
   height: 100%;
 }
+
+/* 溫和的 CopilotChat 高度調整，不影響內部狀態 */
+[class*="copilot-chat"] {
+  min-height: 100%;
+}
+
+/* 確保聊天容器可以滾動 */
+[class*="copilot-chat"] [class*="messages"],
+[class*="copilot-chat"] [class*="conversation"] {
+  overflow-y: auto;
+}

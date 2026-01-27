@@ -1,16 +1,14 @@
 "use client";
 
-import { ProverbsCard } from "@/components/proverbs";
+import { StructuredOutputPreview } from "@/components/structured-output-preview";
 import { WeatherCard } from "@/components/weather";
 import { AgentState } from "@/lib/types";
 import {
   useCoAgent,
-  useDefaultTool,
   useFrontendTool,
-  useHumanInTheLoop,
   useRenderToolCall,
 } from "@copilotkit/react-core";
-import { CopilotKitCSSProperties, CopilotSidebar } from "@copilotkit/react-ui";
+import { CopilotKitCSSProperties, CopilotChat } from "@copilotkit/react-ui";
 import { useState } from "react";
 
 export default function CopilotKitPage() {
@@ -36,41 +34,40 @@ export default function CopilotKitPage() {
       style={
         { "--copilot-kit-primary-color": themeColor } as CopilotKitCSSProperties
       }
+      className="h-screen flex"
     >
-      <CopilotSidebar
-        disableSystemMessage={true}
-        clickOutsideToClose={false}
-        defaultOpen={true}
-        labels={{
-          title: "Popup Assistant",
-          initial: "👋 Hi, there! You're chatting with an agent.",
-        }}
-        suggestions={[
-          {
-            title: "Generative UI",
-            message: "Get the weather in San Francisco.",
-          },
-          {
-            title: "Frontend Tools",
-            message: "Set the theme to green.",
-          },
-          {
-            title: "Write Agent State",
-            message: "Add a proverb about AI.",
-          },
-          {
-            title: "Update Agent State",
-            message:
-              "Please remove 1 random proverb from the list if there are any.",
-          },
-          {
-            title: "Read Agent State",
-            message: "What are the proverbs?",
-          },
-        ]}
-      >
+      {/* 左側聊天室 */}
+      <div className="w-1/2 h-full border-r border-gray-200 flex flex-col">
+        <CopilotChat
+          labels={{
+            title: "AI Assistant",
+            initial: "👋 Hi! I can help you generate structured data and more.",
+          }}
+          suggestions={[
+            {
+              title: "Generate Data",
+              message: "Generate a sample user profile with structured data.",
+            },
+            {
+              title: "Weather Info",
+              message: "Get the weather in Tokyo.",
+            },
+            {
+              title: "Theme Change",
+              message: "Set the theme to blue.",
+            },
+            {
+              title: "JSON Output",
+              message: "Create a JSON structure for a product catalog.",
+            },
+          ]}
+        />
+      </div>
+      
+      {/* 右側預覽區域 */}
+      <div className="w-1/2 h-full">
         <YourMainContent themeColor={themeColor} />
-      </CopilotSidebar>
+      </div>
     </main>
   );
 }
@@ -80,9 +77,8 @@ function YourMainContent({ themeColor }: { themeColor: string }) {
   const { state, setState } = useCoAgent<AgentState>({
     name: "my_agent",
     initialState: {
-      proverbs: [
-        "CopilotKit may be new, but its the best thing since sliced bread.",
-      ],
+      structuredData: null,
+      lastOutput: null,
     },
   });
 
@@ -102,9 +98,9 @@ function YourMainContent({ themeColor }: { themeColor: string }) {
   return (
     <div
       style={{ backgroundColor: themeColor }}
-      className="h-screen flex justify-center items-center flex-col transition-colors duration-300"
+      className="h-full w-full flex justify-center items-center transition-colors duration-300 p-6"
     >
-      <ProverbsCard state={state} setState={setState} />
+      <StructuredOutputPreview state={state} setState={setState} themeColor={themeColor} />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 .env
 .vscode
+.kiro
 uv.lock
 *.pyc
 *.ttf

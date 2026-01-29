@@ -1,0 +1,168 @@
+import { GoogleGenAI, Type, Schema } from "@google/genai";
+import { AGUIResponse } from "../types";
+
+// Initialize Gemini Client
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+// Define the Schema matching our TypeScript interfaces for AG-UI
+const agUiSchema: Schema = {
+  type: Type.OBJECT,
+  properties: {
+    components: {
+      type: Type.ARRAY,
+      description: "A list of UI components to render the answer.",
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          type: {
+            type: Type.STRING,
+            enum: ["markdown", "info_card", "data_list", "step_process", "table"],
+            description: "The type of UI component."
+          },
+          // Common properties are mixed here, specific usage depends on 'type'
+          content: { type: Type.STRING, description: "Markdown content. REQUIRED if type is 'markdown'." },
+          title: { type: Type.STRING, description: "Title. REQUIRED if type is 'info_card', 'step_process' or 'table'." },
+          description: { type: Type.STRING, description: "Description text. REQUIRED if type is 'info_card'." },
+          variant: { 
+            type: Type.STRING, 
+            enum: ["info", "warning", "success", "danger"],
+            description: "Visual style variant. REQUIRED if type is 'info_card'." 
+          },
+          items: {
+            type: Type.ARRAY,
+            description: "Items list. REQUIRED if type is 'data_list'.",
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                label: { type: Type.STRING },
+                value: { type: Type.STRING }
+              }
+            }
+          },
+          steps: {
+            type: Type.ARRAY,
+            description: "Steps list. REQUIRED if type is 'step_process'.",
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                title: { type: Type.STRING },
+                description: { type: Type.STRING }
+              }
+            }
+          },
+          headers: {
+            type: Type.ARRAY,
+            description: "Column headers for table. REQUIRED if type is 'table'.",
+            items: { type: Type.STRING }
+          },
+          rows: {
+            type: Type.ARRAY,
+            description: "Data rows for table. REQUIRED if type is 'table'.",
+            items: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING }
+            }
+          }
+        },
+        required: ["type"]
+      }
+    },
+    suggestions: {
+      type: Type.ARRAY,
+      description: "Suggest exactly 0, 1, or 2 follow-up questions relevant to the answer.",
+      items: { type: Type.STRING },
+    }
+  },
+  required: ["components", "suggestions"]
+};
+
+export const generateAGUIResponse = async (
+  prompt: string,
+  history: { role: string; parts: { text: string }[] }[] = []
+): Promise<AGUIResponse> => {
+  try {
+    const modelId = "gemini-3-flash-preview"; 
+
+    const systemInstruction = `
+      You are an intelligent assistant powered by Google Gemini, communicating via the AG-UI protocol.
+      
+      Your Role:
+      1. Analyze the user's question.
+      2. Structure your answer using specific UI components defined in the output schema.
+      3. Language: ALWAYS reply in TRADITIONAL CHINESE (繁體中文) unless requested otherwise.
+      
+      Component Usage & Field Requirements:
+      
+      1. [type="markdown"]
+         - Use for: General text, paragraphs, and long explanations.
+         - REQUIRED Field: 'content' (Markdown string).
+      
+      2. [type="info_card"]
+         - Use for: Highlights, warnings, summaries, or key takeaways.
+         - REQUIRED Fields: 
+           - 'title' (Short header)
+           - 'description' (The body text. MUST NOT be empty. Do not create cards just for titles.)
+           - 'variant' ('info', 'warning', 'success', 'danger')
+      
+      3. [type="data_list"]
+         - Use for: Key-value pairs for a SINGLE item (e.g., Specs of one device).
+         - REQUIRED Field: 'items' (Array of label/value objects).
+      
+      4. [type="table"]
+         - Use for: Comparing 2+ items (e.g., A vs B) or matrix data. Use this instead of multiple Data Lists for comparisons.
+         - REQUIRED Fields: 'headers' (List of column names), 'rows' (List of row data).
+      
+      5. [type="step_process"]
+         - Use for: Explaining a procedure or timeline.
+         - REQUIRED Field: 'steps' (Array of title/description objects).
+      
+      Crucial Rules:
+      - NO DUPLICATES: Do not generate two components with the same title consecutively. 
+      - NO EMPTY CARDS: Do not create an Info Card with an empty or trivial description. Combine the title and content into a single valid card.
+      - COMPARISONS: Always use 'table' when comparing features (e.g. ADK vs Bluetooth).
+      - Break complex answers into multiple components for better readability.
+      - Always provide 1 or 2 relevant follow-up questions in the 'suggestions' field.
+    `;
+
+    // Convert history to compatible format if needed, though mostly we just send current prompt for this demo
+    // We will assume 'history' is passed correctly if we were building a full chat session object.
+    
+    const response = await ai.models.generateContent({
+      model: modelId,
+      contents: [
+        ...history, 
+        { role: 'user', parts: [{ text: prompt }] }
+      ],
+      config: {
+        systemInstruction: systemInstruction,
+        responseMimeType: "application/json",
+        responseSchema: agUiSchema,
+        thinkingConfig: { thinkingBudget: 0 } // Disable thinking for faster UI response
+      },
+    });
+
+    const responseText = response.text;
+    if (!responseText) {
+      throw new Error("No response from Gemini");
+    }
+
+    // Parse the structured JSON response
+    const data = JSON.parse(responseText) as AGUIResponse;
+    return data;
+
+  } catch (error) {
+    console.error("Error calling Gemini:", error);
+    // Fallback error UI
+    return {
+      components: [
+        {
+          type: "info_card" as any,
+          title: "Error",
+          description: "無法連接到 AI 服務，請稍後再試。",
+          variant: "danger"
+        }
+      ],
+      suggestions: []
+    };
+  }
+};

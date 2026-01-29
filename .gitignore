@@ -2,10 +2,12 @@
 .vscode
 .kiro
 uv.lock
+package-lock.json
 *.pyc
 *.ttf
 *.svg
 *.bat
 *.sh
+*.zip
 
 dev-*

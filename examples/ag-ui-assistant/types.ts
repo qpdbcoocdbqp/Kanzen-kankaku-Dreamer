@@ -46,6 +46,8 @@ export interface StepItem {
 
 export interface StepProcessComponent extends BaseComponent {
   type: ComponentType.STEP_PROCESS;
+  // Added title property to match usage in AGUIRenderer
+  title?: string;
   steps: StepItem[];
 }
 

@@ -81,7 +81,7 @@ export const generateAGUIResponse = async (
   history: { role: string; parts: { text: string }[] }[] = []
 ): Promise<AGUIResponse> => {
   try {
-    const modelId = "gemini-3-flash-preview"; 
+    const modelId = "gemini-2.5-flash-lite"; 
 
     const systemInstruction = `
       You are an intelligent assistant powered by Google Gemini, communicating via the AG-UI protocol.
@@ -124,9 +124,6 @@ export const generateAGUIResponse = async (
       - Always provide 1 or 2 relevant follow-up questions in the 'suggestions' field.
     `;
 
-    // Convert history to compatible format if needed, though mostly we just send current prompt for this demo
-    // We will assume 'history' is passed correctly if we were building a full chat session object.
-    
     const response = await ai.models.generateContent({
       model: modelId,
       contents: [
@@ -137,7 +134,7 @@ export const generateAGUIResponse = async (
         systemInstruction: systemInstruction,
         responseMimeType: "application/json",
         responseSchema: agUiSchema,
-        thinkingConfig: { thinkingBudget: 0 } // Disable thinking for faster UI response
+        // Removed thinkingConfig to avoid potential latency or stalling issues with 0 budget
       },
     });
 
@@ -158,7 +155,7 @@ export const generateAGUIResponse = async (
         {
           type: "info_card" as any,
           title: "Error",
-          description: "無法連接到 AI 服務，請稍後再試。",
+          description: "無法連接到 AI 服務，請稍後再試。請檢查您的網路連線或 API Key。",
           variant: "danger"
         }
       ],

@@ -92,3 +92,22 @@ source .venv/bin/activate
 
   # below command follows Copilotkit guide
   ```
+
+
+### AG-UI-Assistant
+
+* Google AI studio generate UI.
+
+  ```sh
+  cd examples/ag-ui-assistant
+  pnpm install
+
+  # In new terminal, start agent server
+  uv run python -m services.agent_server
+
+  # In new terminal, start AG-UI
+  pnpm run dev
+  ```
+
+  * agent host: `http://localhost:8000`
+  * AG-UI host : `http://localhost:3000`

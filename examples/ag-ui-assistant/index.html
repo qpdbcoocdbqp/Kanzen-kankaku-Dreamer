@@ -5,6 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AG-UI Intelligent Q&A</title>
     <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              // Custom Dark Mode Colors
+              'app-dark': '#1e1e1e', // RGB(30, 30, 30)
+              'app-card': '#252526', // Slightly lighter for cards
+              'app-border': '#3e3e42', // Border for dark mode
+            }
+          }
+        }
+      }
+    </script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
       body {
@@ -25,6 +40,12 @@
       ::-webkit-scrollbar-thumb:hover {
         background: #94a3b8; 
       }
+      .dark ::-webkit-scrollbar-thumb {
+        background: #475569;
+      }
+      .dark ::-webkit-scrollbar-thumb:hover {
+        background: #64748b;
+      }
     </style>
   <script type="importmap">
 {
@@ -40,7 +61,7 @@
 </script>
 <link rel="stylesheet" href="/index.css">
 </head>
-  <body class="bg-slate-50 text-slate-900">
+  <body class="bg-slate-50 text-slate-900 dark:bg-app-dark dark:text-slate-100 transition-colors duration-300">
     <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
 </body>

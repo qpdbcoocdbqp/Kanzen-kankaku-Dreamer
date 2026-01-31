@@ -1,8 +1,12 @@
 import os
 from enum import Enum
-from typing import List, Optional, Union
-from pydantic import BaseModel, Field
+from typing import List, Optional, Union, Annotated, Literal, Any
+from pydantic import BaseModel, Field, field_validator
 from openai import OpenAI
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # --- 1. 定義 AG-UI Protocol (Pydantic Models) ---
 
@@ -11,12 +15,13 @@ class ComponentType(str, Enum):
     INFO_CARD = 'info_card'
     DATA_LIST = 'data_list'
     STEP_PROCESS = 'step_process'
+    TABLE = 'table'
 
 class BaseComponent(BaseModel):
-    type: ComponentType
+    pass
 
 class MarkdownComponent(BaseComponent):
-    type: ComponentType = ComponentType.MARKDOWN
+    type: Literal[ComponentType.MARKDOWN] = ComponentType.MARKDOWN
     content: str
 
 class InfoCardVariant(str, Enum):
@@ -26,34 +31,65 @@ class InfoCardVariant(str, Enum):
     DANGER = 'danger'
 
 class InfoCardComponent(BaseComponent):
-    type: ComponentType = ComponentType.INFO_CARD
+    type: Literal[ComponentType.INFO_CARD] = ComponentType.INFO_CARD
     title: str
-    description: str
+    description: Union[str, List[Any]]
     variant: InfoCardVariant
+
+    @field_validator('description')
+    @classmethod
+    def join_list(cls, v):
+        if isinstance(v, list):
+            return "\n".join(str(i) for i in v)
+        return str(v)
 
 class DataItem(BaseModel):
     label: str
-    value: str
+    value: Union[str, List[Any]]
+
+    @field_validator('value')
+    @classmethod
+    def join_list(cls, v):
+        if isinstance(v, list):
+            return "\n".join(str(i) for i in v)
+        return str(v)
 
 class DataListComponent(BaseComponent):
-    type: ComponentType = ComponentType.DATA_LIST
+    type: Literal[ComponentType.DATA_LIST] = ComponentType.DATA_LIST
     title: Optional[str] = None
     items: List[DataItem]
 
 class StepItem(BaseModel):
     title: str
-    description: str
+    description: Union[str, List[Any]]
+
+    @field_validator('description')
+    @classmethod
+    def join_list(cls, v):
+        if isinstance(v, list):
+            return "\n".join(str(i) for i in v)
+        return str(v)
 
 class StepProcessComponent(BaseComponent):
-    type: ComponentType = ComponentType.STEP_PROCESS
+    type: Literal[ComponentType.STEP_PROCESS] = ComponentType.STEP_PROCESS
+    title: Optional[str] = None
     steps: List[StepItem]
 
-# 聯合型別，讓 Gemini 知道可以選擇哪種組件
-ComponentUnion = Union[MarkdownComponent, InfoCardComponent, DataListComponent, StepProcessComponent]
+class TableComponent(BaseComponent):
+    type: Literal[ComponentType.TABLE] = ComponentType.TABLE
+    title: Optional[str] = None
+    headers: List[str]
+    rows: List[List[str]]
+
+# 聯合型別，使用 discriminator
+ComponentUnion = Annotated[
+    Union[MarkdownComponent, InfoCardComponent, DataListComponent, StepProcessComponent, TableComponent],
+    Field(discriminator='type')
+]
 
 class AGUIResponse(BaseModel):
     components: List[ComponentUnion] = Field(description="A list of UI components to render the answer.")
-    suggestions: List[str] = Field(description="Suggest exactly 0, 1, or 2 follow-up questions.", max_length=2)
+    suggestions: List[str] = Field(description="Suggest exactly 0, 1, or 2 follow-up questions.")
 
 # --- 2. Google ADK Agent 邏輯 ---
 
@@ -68,58 +104,75 @@ def generate_ag_ui_response(prompt: str):
     # print(models)
 
     system_instruction = """
-    You are an intelligent assistant powered by Google Gemini, communicating via the AG-UI protocol.
-    
+    You are an intelligent assistant communicating via the AG-UI protocol.
+
     Your Role:
     1. Analyze the user's question.
-    2. Structure your answer using specific UI components defined in the output schema.
-    3. Language: ALWAYS reply in TRADITIONAL CHINESE (繁體中文) unless requested otherwise.
-    
-    Component Usage & Field Requirements:
-    
+    2. Structure your answer using the strictly defined JSON schema.
+    3. Language: ALWAYS reply in TRADITIONAL CHINESE (繁體中文).
+
+    Output Schema Structure:
+    The output MUST be a JSON object with two top-level fields:
+    - "components": A list of UI components.
+    - "suggestions": A list of strings (follow-up questions).
+
+    Available Components (for the "components" list):
+
     1. [type="markdown"]
-        - Use for: General text, paragraphs, and long explanations.
-        - REQUIRED Field: 'content' (Markdown string).
-    
+       - Use for: General text, paragraphs.
+       - Fields:
+         - type: "markdown"
+         - content: string (Markdown format)
+
     2. [type="info_card"]
-        - Use for: Highlights, warnings, summaries, or key takeaways.
-        - REQUIRED Fields: 
-        - 'title' (Short header)
-        - 'description' (The body text. MUST NOT be empty. Do not create cards just for titles.)
-        - 'variant' ('info', 'warning', 'success', 'danger')
-    
+       - Use for: Important notices, warnings, or summaries.
+       - Fields:
+         - type: "info_card"
+         - title: string
+         - description: string (Must not be empty)
+         - variant: "info" | "warning" | "success" | "danger" (REQUIRED)
+
     3. [type="data_list"]
-        - Use for: Key-value pairs for a SINGLE item (e.g., Specs of one device).
-        - REQUIRED Field: 'items' (Array of label/value objects).
-    
-    4. [type="table"]
-        - Use for: Comparing 2+ items (e.g., A vs B) or matrix data. Use this instead of multiple Data Lists for comparisons.
-        - REQUIRED Fields: 'headers' (List of column names), 'rows' (List of row data).
-    
-    5. [type="step_process"]
-        - Use for: Explaining a procedure or timeline.
-        - REQUIRED Field: 'steps' (Array of title/description objects).
-    
-    Crucial Rules:
-    - NO DUPLICATES: Do not generate two components with the same title consecutively. 
-    - NO EMPTY CARDS: Do not create an Info Card with an empty or trivial description. Combine the title and content into a single valid card.
-    - COMPARISONS: Always use 'table' when comparing features (e.g. ADK vs Bluetooth).
-    - Break complex answers into multiple components for better readability.
-    - Always provide 1 or 2 relevant follow-up questions in the 'suggestions' field.
+       - Use for: Key-value data.
+       - Fields:
+         - type: "data_list"
+         - title: string (optional)
+         - items: List of objects with "label" and "value" fields.
+
+    4. [type="step_process"]
+       - Use for: Step-by-step guides.
+       - Fields:
+         - type: "step_process"
+         - title: string (optional)
+         - steps: List of objects with "title" and "description" fields.
+
+    5. [type="table"]
+       - Use for: Tabular data representation.
+       - Fields:
+         - type: "table"
+         - title: string (optional)
+         - headers: List of strings (column names)
+         - rows: List of List of strings (data rows matching headers)
+
+    IMPORTANT RULES:
+    - DO NOT use any component types other than the 5 listed above. (NO suggestions as components).
+    - "suggestions" goes at the ROOT level, NOT inside "components".
+    - Ensure ALL required fields (especially 'variant' for info_card) are present.
     """
 
     completion = client.chat.completions.parse(
-        model="lm",
+        model="mxt",
         messages=[
             {"role": "system", "content": system_instruction},
             {"role": "user", "content": prompt},
         ],
-        max_tokens=4096,
-        temperature=1.1,
+        max_tokens=8192,
+        temperature=0.7,
         response_format=AGUIResponse,
     )
-
+    logger.info(completion.choices[0].message.parsed)
     return completion.choices[0].message.parsed
+
 
 # --- 3. FastAPI Server Setup ---
 
@@ -149,6 +202,7 @@ async def chat_endpoint(request: ChatRequest):
         response = generate_ag_ui_response(request.message)
         return response
     except Exception as e:
+        logger.error(f"Error processing request: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

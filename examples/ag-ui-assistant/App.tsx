@@ -1,181 +1,31 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Sparkles, User, MessageSquare, Settings, X, Moon, Sun, Check, RefreshCw } from 'lucide-react';
+import { Send, Sparkles, User, MessageSquare, Settings } from 'lucide-react';
 import { AGUIRenderer } from './components/AGUIRenderer';
+import { SkeletonLoader } from './components/SkeletonLoader';
+import { SettingsModal } from './components/SettingsModal';
 import { generateAGUIResponse } from './services/llamacppService';
 import { ChatMessage } from './types';
 
 // Greeting default questions
 const DEFAULT_QUESTIONS = [
-  "如何使用 Google ADK 進行開發？",
-  "請解釋 AG-UI 的運作原理。",
-  "什麼是結構化輸出 (Structured Output)？"
+  "請使用 Markdown 介紹 AG-UI (Markdown)",
+  "顯示一個關於系統維護的警告卡片 (InfoCard)",
+  "列出使用到的技術棧清單 (DataList)",
+  "說明如何啟動開發伺服器的步驟 (StepProcess)",
+  "請用表格比較 React 和 Vue 的差異 (Table)"
 ];
 
 // Full palette of available colors
-const ALL_COLORS = [
-  'indigo', 'blue', 'sky', 'cyan', 'teal', 
-  'emerald', 'green', 'lime', 'yellow', 'amber', 
-  'orange', 'red', 'rose', 'pink', 'fuchsia', 
-  'purple', 'violet', 'slate', 'zinc', 'neutral', 'stone'
-];
 
-const SkeletonLoader = ({ themeColor = 'indigo' }) => (
-  <div className="flex gap-4 animate-pulse w-full">
-    {/* Avatar Skeleton */}
-    <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-app-card shrink-0 border border-slate-100 dark:border-app-border shadow-sm" />
-    
-    {/* Content Skeleton */}
-    <div className="flex flex-col w-full max-w-[85%] items-start">
-      <div className="bg-white dark:bg-app-card border border-slate-200 dark:border-app-border rounded-2xl rounded-tl-sm p-6 shadow-sm w-full space-y-6">
-        
-        {/* Paragraph Skeleton */}
-        <div className="space-y-3">
-          <div className="h-4 bg-slate-100 dark:bg-zinc-700/50 rounded-md w-[92%]"></div>
-          <div className="h-4 bg-slate-100 dark:bg-zinc-700/50 rounded-md w-[98%]"></div>
-          <div className="h-4 bg-slate-100 dark:bg-zinc-700/50 rounded-md w-[85%]"></div>
-        </div>
 
-        {/* Info Card Skeleton */}
-        <div className="border border-slate-100 dark:border-app-border rounded-xl p-4 bg-slate-50/80 dark:bg-zinc-800/30 flex gap-4">
-          <div className="w-5 h-5 bg-slate-200 dark:bg-zinc-700 rounded-full shrink-0 mt-1"></div>
-          <div className="flex-1 space-y-2">
-             <div className="h-4 bg-slate-200 dark:bg-zinc-700 rounded-md w-1/3"></div>
-             <div className="h-3 bg-slate-200/70 dark:bg-zinc-700/50 rounded-md w-full"></div>
-             <div className="h-3 bg-slate-200/70 dark:bg-zinc-700/50 rounded-md w-5/6"></div>
-          </div>
-        </div>
-      </div>
-      
-      {/* Suggestions Skeleton */}
-      <div className="mt-4 w-full">
-         <div className="flex items-center gap-2 mb-2">
-            <div className="w-3 h-3 bg-slate-200 dark:bg-zinc-700 rounded-full"></div>
-            <div className="h-3 w-16 bg-slate-200 dark:bg-zinc-700 rounded"></div>
-         </div>
-         <div className="flex flex-wrap gap-2">
-            <div className="h-9 bg-white dark:bg-app-card border border-slate-200 dark:border-app-border rounded-full w-48"></div>
-         </div>
-      </div>
-    </div>
-  </div>
-);
 
-const SettingsModal = ({ 
-  isOpen, 
-  onClose, 
-  isDarkMode, 
-  toggleDarkMode, 
-  themeColor, 
-  setThemeColor 
-}: { 
-  isOpen: boolean; 
-  onClose: () => void;
-  isDarkMode: boolean;
-  toggleDarkMode: () => void;
-  themeColor: string;
-  setThemeColor: (color: string) => void;
-}) => {
-  const [displayColors, setDisplayColors] = useState<string[]>([]);
-
-  // Randomize colors when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      // Shuffle array
-      const shuffled = [...ALL_COLORS].sort(() => 0.5 - Math.random());
-      // Pick top 12
-      setDisplayColors(shuffled.slice(0, 12));
-    }
-  }, [isOpen]);
-
-  // Refresh colors manually
-  const refreshColors = () => {
-    const shuffled = [...ALL_COLORS].sort(() => 0.5 - Math.random());
-    setDisplayColors(shuffled.slice(0, 12));
-  };
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
-      
-      {/* Modal */}
-      <div className="relative w-full max-w-md bg-white dark:bg-app-card rounded-2xl shadow-xl border border-slate-200 dark:border-app-border overflow-hidden animate-fadeIn">
-        <div className="px-6 py-4 border-b border-slate-100 dark:border-app-border flex justify-between items-center bg-slate-50/50 dark:bg-[#2a2a2b]">
-          <h3 className="font-bold text-lg text-slate-800 dark:text-slate-100 flex items-center gap-2">
-            <Settings className="w-5 h-5 text-slate-500" />
-            外觀設定
-          </h3>
-          <button onClick={onClose} className="p-1 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-700 text-slate-500 dark:text-slate-400 transition-colors">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        
-        <div className="p-6 space-y-8">
-          {/* Dark Mode Toggle */}
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="font-medium text-slate-900 dark:text-slate-100 mb-1">深色模式</div>
-              <div className="text-sm text-slate-500 dark:text-slate-400">切換應用程式的明暗主題</div>
-            </div>
-            <button 
-              onClick={toggleDarkMode}
-              className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-${themeColor}-500 focus:ring-offset-2 ${isDarkMode ? `bg-${themeColor}-600` : 'bg-slate-200'}`}
-            >
-              <span className={`inline-block h-6 w-6 transform rounded-full bg-white shadow transition-transform ${isDarkMode ? 'translate-x-7' : 'translate-x-1'}`}>
-                {isDarkMode ? (
-                  <Moon className={`w-3.5 h-3.5 absolute top-1.5 left-1.5 text-${themeColor}-600`} />
-                ) : (
-                  <Sun className="w-3.5 h-3.5 absolute top-1.5 left-1.5 text-amber-500" />
-                )}
-              </span>
-            </button>
-          </div>
-
-          {/* Color Picker */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-               <div className="font-medium text-slate-900 dark:text-slate-100">主題顏色</div>
-               <button onClick={refreshColors} className="text-xs flex items-center gap-1 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 transition-colors">
-                 <RefreshCw className="w-3 h-3" /> 隨機更換
-               </button>
-            </div>
-            
-            <div className="grid grid-cols-6 gap-3">
-              {displayColors.map((color) => (
-                <button
-                  key={color}
-                  onClick={() => setThemeColor(color)}
-                  className={`w-10 h-10 rounded-full bg-${color}-500 hover:bg-${color}-400 flex items-center justify-center transition-all hover:scale-110 shadow-sm ring-offset-2 dark:ring-offset-[#252526] ${themeColor === color ? `ring-2 ring-${color}-600` : ''}`}
-                  aria-label={`Select ${color} theme`}
-                >
-                  {themeColor === color && <Check className="w-5 h-5 text-white" />}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-slate-50 dark:bg-[#2a2a2b] px-6 py-4 flex justify-end">
-          <button 
-            onClick={onClose}
-            className={`px-4 py-2 bg-${themeColor}-600 hover:bg-${themeColor}-700 text-white rounded-lg font-medium transition-colors shadow-sm`}
-          >
-            完成
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 const App: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  
+
   // Persistence State
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -183,7 +33,7 @@ const App: React.FC = () => {
     }
     return false;
   });
-  
+
   const [themeColor, setThemeColor] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('agui_theme_color') || 'indigo';
@@ -258,7 +108,7 @@ const App: React.FC = () => {
 
   const renderSuggestions = (suggestions: string[]) => {
     if (!suggestions || suggestions.length === 0) return null;
-    
+
     return (
       <div className="mt-4 flex flex-wrap gap-2 animate-fadeIn">
         <div className="w-full text-xs font-medium text-slate-400 mb-1 flex items-center gap-1">
@@ -280,8 +130,8 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-app-dark flex flex-col transition-colors duration-300">
-      <SettingsModal 
-        isOpen={showSettings} 
+      <SettingsModal
+        isOpen={showSettings}
         onClose={() => setShowSettings(false)}
         isDarkMode={isDarkMode}
         toggleDarkMode={() => setIsDarkMode(!isDarkMode)}
@@ -298,10 +148,10 @@ const App: React.FC = () => {
             </div>
             <div>
               <h1 className="font-bold text-slate-900 dark:text-slate-100 leading-tight">AG-UI 問答助手</h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Powered by Google Gemini & ADK</p>
+              {/* <p className="text-xs text-slate-500 dark:text-slate-400">Powered by Google Gemini & ADK</p> */}
             </div>
           </div>
-          <button 
+          <button
             onClick={() => setShowSettings(true)}
             className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-700 text-slate-500 dark:text-slate-400 transition-colors"
           >
@@ -323,7 +173,7 @@ const App: React.FC = () => {
               <p className="text-slate-600 dark:text-slate-400 mb-8">
                 我是您的 AI 助手。我會使用 AG-UI 協議，以結構化的方式（圖表、列表、卡片）回答您的問題。請嘗試以下問題：
               </p>
-              
+
               <div className="flex flex-col gap-3">
                 {DEFAULT_QUESTIONS.map((q, i) => (
                   <button
@@ -362,14 +212,14 @@ const App: React.FC = () => {
                   {msg.role === 'model' && msg.data?.suggestions && (
                     renderSuggestions(msg.data.suggestions)
                   )}
-                  
+
                   <span className="text-xs text-slate-400 mt-2 px-1">
                     {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
               </div>
             ))}
-            
+
             {isLoading && <SkeletonLoader themeColor={themeColor} />}
             <div ref={messagesEndRef} />
           </div>

@@ -1,60 +1,71 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
-import { 
-  AGUIComponent, 
-  ComponentType, 
-  MarkdownComponent, 
-  InfoCardComponent, 
-  DataListComponent, 
+import {
+  AGUIComponent,
+  ComponentType,
+  MarkdownComponent,
+  InfoCardComponent,
+  DataListComponent,
   StepProcessComponent,
-  TableComponent
+  TableComponent,
+  DataItem,
+  StepItem
 } from '../types';
-import { 
-  Info, 
-  AlertTriangle, 
-  CheckCircle2, 
-  Ban, 
+import {
+  Info,
+  AlertTriangle,
+  CheckCircle2,
+  Ban,
   ListChecks,
   LayoutList
 } from 'lucide-react';
 
 /**
- * Deeply extracts text from any object/array/primitive structure.
+ * Optimized text extraction that avoids deep recursion and checks for common patterns.
+ * Explicitly handles primitives and known object structures.
  */
-const extractText = (val: any): string => {
+const resolveText = (val: unknown): string => {
   if (val === null || val === undefined) return "";
   if (typeof val === 'string') return val;
   if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+
   if (Array.isArray(val)) {
-    return val.map(extractText).filter(s => s.trim() !== "").join('\n');
+    // Join array elements with newline, shallow processing
+    return val.map(item => resolveText(item)).join('\n');
   }
+
   if (typeof val === 'object') {
-    if (val.text) return extractText(val.text);
-    if (val.content) return extractText(val.content);
-    if (val.value) return extractText(val.value);
-    if (val.description) return extractText(val.description);
-    if (val.message) return extractText(val.message);
-    if (val.label && !val.value) return extractText(val.label);
-    if (val.title && !val.description) return extractText(val.title);
-    const values = Object.values(val);
-    if (values.length > 0) {
-      const extracted = values.map(v => extractText(v)).filter(s => s.trim() !== "");
-      if (extracted.length > 0) return extracted.join(', ');
+    const v = val as Record<string, unknown>;
+    // Check common keys in priority order
+    if (typeof v.content === 'string') return v.content;
+    if (typeof v.text === 'string') return v.text;
+    if (typeof v.value === 'string') return v.value;
+    if (typeof v.description === 'string') return v.description;
+    if (typeof v.message === 'string') return v.message;
+
+    // Fallback: limited recursive attempt on values if it's a simple object wrapper
+    // but we avoid full deep traversal for every field.
+    // For performance, we might just return empty or JSON string if it's too complex vs extraction.
+    // Let's stick to returning JSON string implementation for debugging if structure is unknown, 
+    // or empty string to be safe. But user wanted extraction. 
+    // Let's just key off the first string value we find if generic.
+    for (const key in v) {
+      if (typeof v[key] === 'string') return v[key] as string;
     }
-    return "";
   }
-  return String(val);
+
+  return "";
 };
 
-interface RendererProps {
-  data: any;
+interface RendererProps<T extends AGUIComponent> {
+  data: T;
   themeColor: string;
 }
 
-const MarkdownBlock: React.FC<RendererProps> = ({ data, themeColor }) => {
-  const content = extractText(data.content || (data as any).description || (data as any).text || (data as any).value);
+const MarkdownBlock: React.FC<RendererProps<MarkdownComponent>> = ({ data, themeColor }) => {
+  const content = data.content || resolveText(data);
   if (!content) return null;
-  
+
   return (
     <div className={`prose prose-slate dark:prose-invert max-w-none text-slate-700 dark:text-slate-300 leading-relaxed
       prose-headings:font-bold prose-headings:text-slate-800 dark:prose-headings:text-slate-100
@@ -68,7 +79,7 @@ const MarkdownBlock: React.FC<RendererProps> = ({ data, themeColor }) => {
   );
 };
 
-const InfoCard: React.FC<RendererProps> = ({ data }) => {
+const InfoCard: React.FC<RendererProps<InfoCardComponent>> = ({ data }) => {
   const variantStyles = {
     info: {
       container: 'bg-sky-50 dark:bg-sky-900/20 border-sky-100 dark:border-sky-800',
@@ -103,14 +114,13 @@ const InfoCard: React.FC<RendererProps> = ({ data }) => {
       icon: Ban
     },
   };
-  
-  const v = data.variant && variantStyles[data.variant as keyof typeof variantStyles] ? data.variant as keyof typeof variantStyles : 'info';
+
+  const v = (data.variant && variantStyles[data.variant]) ? data.variant : 'info';
   const style = variantStyles[v];
   const Icon = style.icon;
-  
-  const title = extractText(data.title);
-  const rawDesc = data.description || (data as any).content || (data as any).text;
-  const description = extractText(rawDesc);
+
+  const title = data.title || resolveText(data);
+  const description = data.description || resolveText(data);
 
   if (!description && !title) return null;
 
@@ -132,9 +142,9 @@ const InfoCard: React.FC<RendererProps> = ({ data }) => {
   );
 };
 
-const DataList: React.FC<RendererProps> = ({ data, themeColor }) => {
-  const title = extractText(data.title);
-  
+const DataList: React.FC<RendererProps<DataListComponent>> = ({ data, themeColor }) => {
+  const title = data.title;
+
   return (
     <div className="my-4 rounded-xl border border-slate-200 dark:border-app-border bg-white dark:bg-app-card shadow-sm overflow-hidden">
       {title && (
@@ -144,41 +154,33 @@ const DataList: React.FC<RendererProps> = ({ data, themeColor }) => {
         </div>
       )}
       <div className="divide-y divide-slate-100 dark:divide-app-border">
-        {data.items?.map((item: any, idx: number) => {
+        {data.items?.map((item: DataItem | unknown, idx: number) => {
           let label = "";
           let value = "";
 
           if (typeof item === 'string') {
             value = item;
           } else if (typeof item === 'object' && item !== null) {
-            if (item.label || item.value) {
-               label = extractText(item.label);
-               value = extractText(item.value);
+            // Priority: Check strictly typed properties
+            const dataItem = item as Partial<DataItem>;
+            if (dataItem.label || dataItem.value) {
+              label = dataItem.label || "";
+              value = dataItem.value || "";
             } else {
-               const keys = Object.keys(item).filter(k => k !== 'type');
-               if (keys.length === 1) {
-                 label = keys[0];
-                 value = extractText(item[keys[0]]);
-               } else if (keys.length > 1) {
-                 const labelKey = keys.find(k => /name|label|key|title/i.test(k));
-                 const valueKey = keys.find(k => k !== labelKey);
-                 if (labelKey) {
-                   label = extractText(item[labelKey]);
-                   value = valueKey ? extractText(item[valueKey]) : "";
-                 } else {
-                   value = extractText(item);
-                 }
-               } else {
-                 value = extractText(item);
-               }
+              // Soft fallback for untyped objects
+              const keys = Object.keys(item).filter(k => k !== 'type');
+              if (keys.length > 0) {
+                label = keys[0];
+                value = resolveText((item as any)[keys[0]]);
+              }
             }
           }
 
           if (!label && !value) return null;
 
           return (
-            <div 
-              key={idx} 
+            <div
+              key={idx}
               className={`group flex flex-col sm:flex-row sm:justify-between sm:items-center px-5 py-3 hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-colors gap-1 sm:gap-4`}
             >
               {label && (
@@ -197,9 +199,9 @@ const DataList: React.FC<RendererProps> = ({ data, themeColor }) => {
   );
 };
 
-const StepProcess: React.FC<RendererProps> = ({ data, themeColor }) => {
-  const title = extractText(data.title);
-  
+const StepProcess: React.FC<RendererProps<StepProcessComponent>> = ({ data, themeColor }) => {
+  const title = data.title;
+
   return (
     <div className="my-6 relative pl-2">
       {title && (
@@ -209,21 +211,24 @@ const StepProcess: React.FC<RendererProps> = ({ data, themeColor }) => {
         </h4>
       )}
       <div className="space-y-0">
-        {data.steps?.map((step: any, idx: number) => {
+        {data.steps?.map((step: StepItem | unknown, idx: number) => {
           const isLast = idx === (data.steps.length - 1);
-          
+
           let stepTitle = "";
           let stepDesc = "";
-          
+
           if (typeof step === 'string') {
-             stepDesc = step;
-          } else if (typeof step === 'object') {
-             stepTitle = extractText(step.title || step.name || step.step);
-             stepDesc = extractText(step.description || step.instruction || step.content || step.details || step.text);
-             if (!stepDesc && stepTitle) {
-               stepDesc = stepTitle;
-               stepTitle = "";
-             }
+            stepDesc = step;
+          } else if (typeof step === 'object' && step !== null) {
+            const s = step as Partial<StepItem>;
+            stepTitle = s.title || "";
+            stepDesc = s.description || "";
+
+            // Fallback for messy objects
+            if (!stepTitle && !stepDesc) {
+              // Try resolve
+              stepDesc = resolveText(step);
+            }
           }
 
           if (!stepTitle && !stepDesc) return null;
@@ -233,18 +238,18 @@ const StepProcess: React.FC<RendererProps> = ({ data, themeColor }) => {
               {!isLast && (
                 <div className={`absolute left-[19px] top-10 bottom-0 w-0.5 bg-gradient-to-b from-${themeColor}-200 to-slate-200 dark:from-${themeColor}-800 dark:to-zinc-700 group-hover:from-${themeColor}-400 group-hover:to-slate-300 transition-colors`} />
               )}
-              
+
               <div className={`relative z-10 w-10 h-10 shrink-0 rounded-full bg-white dark:bg-app-card border-2 border-${themeColor}-100 dark:border-${themeColor}-900 text-${themeColor}-600 dark:text-${themeColor}-400 flex items-center justify-center font-bold text-sm shadow-sm group-hover:border-${themeColor}-400 group-hover:text-${themeColor}-700 dark:group-hover:text-${themeColor}-300 group-hover:scale-110 transition-all duration-300`}>
                 {idx + 1}
               </div>
-              
+
               <div className="pb-8 flex-1 min-w-0 pt-1">
                 <div className={`bg-white dark:bg-app-card border border-slate-100 dark:border-app-border rounded-lg p-4 shadow-sm hover:shadow-md hover:border-${themeColor}-200 dark:hover:border-${themeColor}-700 transition-all duration-300 relative`}>
                   <div className={`absolute top-4 -left-[7px] w-3 h-3 bg-white dark:bg-app-card border-l border-b border-slate-100 dark:border-app-border transform rotate-45 group-hover:border-${themeColor}-200 dark:group-hover:border-${themeColor}-700 transition-colors`} />
-                  
+
                   {stepTitle && <h5 className="font-bold text-slate-900 dark:text-slate-100 text-sm mb-1">{stepTitle}</h5>}
                   <div className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">
-                     <ReactMarkdown>{stepDesc}</ReactMarkdown>
+                    <ReactMarkdown>{stepDesc}</ReactMarkdown>
                   </div>
                 </div>
               </div>
@@ -256,43 +261,43 @@ const StepProcess: React.FC<RendererProps> = ({ data, themeColor }) => {
   );
 };
 
-const Table: React.FC<RendererProps> = ({ data }) => {
+const Table: React.FC<RendererProps<TableComponent>> = ({ data }) => {
   if (!data.rows || data.rows.length === 0) return null;
-  const title = extractText(data.title);
+  const title = data.title;
 
   return (
     <div className="my-5 overflow-hidden rounded-xl border border-slate-200 dark:border-app-border shadow-sm bg-white dark:bg-app-card ring-1 ring-slate-100 dark:ring-app-border">
       {title && (
-         <div className="bg-slate-50/80 dark:bg-zinc-800/50 backdrop-blur-sm px-5 py-3 border-b border-slate-200 dark:border-app-border font-bold text-sm text-slate-700 dark:text-slate-200 flex items-center gap-2">
-           <LayoutList className="w-4 h-4 text-slate-400" />
-           {title}
-         </div>
+        <div className="bg-slate-50/80 dark:bg-zinc-800/50 backdrop-blur-sm px-5 py-3 border-b border-slate-200 dark:border-app-border font-bold text-sm text-slate-700 dark:text-slate-200 flex items-center gap-2">
+          <LayoutList className="w-4 h-4 text-slate-400" />
+          {title}
+        </div>
       )}
       <div className="overflow-x-auto">
         <table className="w-full text-sm text-left border-collapse">
           <thead>
             <tr className="bg-slate-50 dark:bg-zinc-800/30 border-b border-slate-200 dark:border-app-border">
-              {data.headers?.map((h: any, i: number) => (
+              {data.headers?.map((h: string, i: number) => (
                 <th key={i} className="px-5 py-3 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap first:pl-6 last:pr-6">
-                  {extractText(h)}
+                  {h}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-app-border">
-            {data.rows.map((row: any[], rIdx: number) => (
-              <tr 
-                key={rIdx} 
+            {data.rows.map((row: string[], rIdx: number) => (
+              <tr
+                key={rIdx}
                 className="hover:bg-slate-50 dark:hover:bg-zinc-800/30 transition-colors even:bg-slate-50/30 dark:even:bg-zinc-800/10"
               >
-                 {row.map((cell, cIdx) => (
-                   <td 
-                     key={cIdx} 
-                     className="px-5 py-3 text-slate-700 dark:text-slate-300 first:pl-6 last:pr-6 first:font-medium first:text-slate-900 dark:first:text-slate-100"
-                   >
-                     {extractText(cell)}
-                   </td>
-                 ))}
+                {row.map((cell, cIdx) => (
+                  <td
+                    key={cIdx}
+                    className="px-5 py-3 text-slate-700 dark:text-slate-300 first:pl-6 last:pr-6 first:font-medium first:text-slate-900 dark:first:text-slate-100"
+                  >
+                    {resolveText(cell)}
+                  </td>
+                ))}
               </tr>
             ))}
           </tbody>
@@ -304,13 +309,11 @@ const Table: React.FC<RendererProps> = ({ data }) => {
 
 export const AGUIRenderer: React.FC<{ components: AGUIComponent[], themeColor?: string }> = ({ components, themeColor = 'indigo' }) => {
   if (!components || !Array.isArray(components)) return null;
-  
+
   return (
     <div className="flex flex-col gap-2 w-full">
       {components.map((component, index) => {
         if (!component || !component.type) return null;
-        
-        const props = { data: component as any, themeColor };
 
         return (
           <div key={index} className="w-full animate-fadeIn" style={{ animationDelay: `${index * 100}ms` }}>
@@ -318,24 +321,24 @@ export const AGUIRenderer: React.FC<{ components: AGUIComponent[], themeColor?: 
               try {
                 switch (component.type) {
                   case ComponentType.MARKDOWN:
-                    return <MarkdownBlock {...props} />;
+                    return <MarkdownBlock data={component} themeColor={themeColor} />;
                   case ComponentType.INFO_CARD:
-                    return <InfoCard {...props} />;
+                    return <InfoCard data={component} themeColor={themeColor} />;
                   case ComponentType.DATA_LIST:
-                    return <DataList {...props} />;
+                    return <DataList data={component} themeColor={themeColor} />;
                   case ComponentType.STEP_PROCESS:
-                    return <StepProcess {...props} />;
+                    return <StepProcess data={component} themeColor={themeColor} />;
                   case ComponentType.TABLE:
-                    return <Table {...props} />;
+                    return <Table data={component} themeColor={themeColor} />;
                   default:
                     return null;
                 }
               } catch (e) {
                 console.error("Error rendering component:", component, e);
                 return (
-                   <div className="p-2 border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded text-xs">
-                     Component Rendering Error
-                   </div>
+                  <div className="p-2 border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded text-xs">
+                    Component Rendering Error
+                  </div>
                 );
               }
             })()}

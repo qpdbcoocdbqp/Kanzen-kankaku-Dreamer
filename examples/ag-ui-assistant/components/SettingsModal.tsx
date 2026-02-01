@@ -3,10 +3,11 @@ import { Settings, X, Moon, Sun, Check, RefreshCw } from 'lucide-react';
 
 // Full palette of available colors
 const ALL_COLORS = [
-    'indigo', 'blue', 'sky', 'cyan', 'teal',
-    'emerald', 'green', 'lime', 'yellow', 'amber',
-    'orange', 'red', 'rose', 'pink', 'fuchsia',
-    'purple', 'violet', 'slate', 'zinc', 'neutral', 'stone'
+    "red", "orange", "amber", "yellow", "lime",
+    "green", "emerald", "teal", "cyan", "sky",
+    "blue", "indigo", "violet", "purple", "fuchsia",
+    "pink", "rose", "slate", "gray", "zinc",
+    "neutral", "stone"
 ];
 
 interface SettingsModalProps {
@@ -56,7 +57,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="px-6 py-4 border-b border-slate-100 dark:border-app-border flex justify-between items-center bg-slate-50/50 dark:bg-[#2a2a2b]">
                     <h3 className="font-bold text-lg text-slate-800 dark:text-slate-100 flex items-center gap-2">
                         <Settings className="w-5 h-5 text-slate-500" />
-                        外觀設定
+                        Appearance Settings
                     </h3>
                     <button onClick={onClose} className="p-1 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-700 text-slate-500 dark:text-slate-400 transition-colors">
                         <X className="w-5 h-5" />
@@ -67,16 +68,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     {/* Dark Mode Toggle */}
                     <div className="flex items-center justify-between">
                         <div>
-                            <div className="font-medium text-slate-900 dark:text-slate-100 mb-1">深色模式</div>
-                            <div className="text-sm text-slate-500 dark:text-slate-400">切換應用程式的明暗主題</div>
+                            <div className="font-medium text-slate-900 dark:text-slate-100 mb-1">Dark Mode</div>
+                            <div className="text-sm text-slate-500 dark:text-slate-400">Toggle between light and dark themes</div>
                         </div>
                         <button
                             onClick={toggleDarkMode}
-                            className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-${themeColor}-500 focus:ring-offset-2 ${isDarkMode ? `bg-${themeColor}-600` : 'bg-slate-200'}`}
+                            className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-${themeColor}-600 focus:ring-offset-2 ${isDarkMode ? `bg-${themeColor}-700` : 'bg-slate-200'}`}
                         >
                             <span className={`inline-block h-6 w-6 transform rounded-full bg-white shadow transition-transform ${isDarkMode ? 'translate-x-7' : 'translate-x-1'}`}>
                                 {isDarkMode ? (
-                                    <Moon className={`w-3.5 h-3.5 absolute top-1.5 left-1.5 text-${themeColor}-600`} />
+                                    <Moon className={`w-3.5 h-3.5 absolute top-1.5 left-1.5 text-${themeColor}-700`} />
                                 ) : (
                                     <Sun className="w-3.5 h-3.5 absolute top-1.5 left-1.5 text-amber-500" />
                                 )}
@@ -87,9 +88,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     {/* Color Picker */}
                     <div>
                         <div className="flex items-center justify-between mb-3">
-                            <div className="font-medium text-slate-900 dark:text-slate-100">主題顏色</div>
+                            <div className="font-medium text-slate-900 dark:text-slate-100">Theme Color</div>
                             <button onClick={refreshColors} className="text-xs flex items-center gap-1 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 transition-colors">
-                                <RefreshCw className="w-3 h-3" /> 隨機更換
+                                <RefreshCw className="w-3 h-3" /> Randomize
                             </button>
                         </div>
 
@@ -98,7 +99,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 <button
                                     key={color}
                                     onClick={() => setThemeColor(color)}
-                                    className={`w-10 h-10 rounded-full bg-${color}-500 hover:bg-${color}-400 flex items-center justify-center transition-all hover:scale-110 shadow-sm ring-offset-2 dark:ring-offset-[#252526] ${themeColor === color ? `ring-2 ring-${color}-600` : ''}`}
+                                    className={`w-10 h-10 rounded-full bg-${color}-600 hover:bg-${color}-500 flex items-center justify-center transition-all hover:scale-110 shadow-sm ring-offset-2 dark:ring-offset-[#252526] ${themeColor === color ? `ring-2 ring-${color}-700` : ''}`}
                                     aria-label={`Select ${color} theme`}
                                 >
                                     {themeColor === color && <Check className="w-5 h-5 text-white" />}
@@ -111,9 +112,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="bg-slate-50 dark:bg-[#2a2a2b] px-6 py-4 flex justify-end">
                     <button
                         onClick={onClose}
-                        className={`px-4 py-2 bg-${themeColor}-600 hover:bg-${themeColor}-700 text-white rounded-lg font-medium transition-colors shadow-sm`}
+                        className={`px-4 py-2 bg-${themeColor}-700 hover:bg-${themeColor}-800 text-white rounded-lg font-medium transition-colors shadow-sm`}
                     >
-                        完成
+                        Done
                     </button>
                 </div>
             </div>

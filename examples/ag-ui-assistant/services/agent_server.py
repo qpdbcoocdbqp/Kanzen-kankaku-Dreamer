@@ -8,7 +8,7 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- 1. 定義 AG-UI Protocol (Pydantic Models) ---
+# --- 1. Define AG-UI Protocol (Pydantic Models) ---
 
 class ComponentType(str, Enum):
     MARKDOWN = 'markdown'
@@ -81,7 +81,7 @@ class TableComponent(BaseComponent):
     headers: List[str]
     rows: List[List[str]]
 
-# 聯合型別，使用 discriminator
+# Union type, using discriminator
 ComponentUnion = Annotated[
     Union[MarkdownComponent, InfoCardComponent, DataListComponent, StepProcessComponent, TableComponent],
     Field(discriminator='type')
@@ -91,10 +91,10 @@ class AGUIResponse(BaseModel):
     components: List[ComponentUnion] = Field(description="A list of UI components to render the answer.")
     suggestions: List[str] = Field(description="Suggest exactly 0, 1, or 2 follow-up questions.")
 
-# --- 2. Google ADK Agent 邏輯 ---
+# --- 2. Google ADK Agent Logic ---
 
 def generate_ag_ui_response(prompt: str):
-    # 連接到本地 llama.cpp server
+    # Connect to local llama.cpp server
     client = OpenAI(
         base_url="http://localhost:9006/v1",
         api_key="***"
@@ -182,7 +182,7 @@ import uvicorn
 
 app = FastAPI()
 
-# 允許跨域請求 (Frontend usually runs on port 3000 or 5173)
+# Allow CROSS-ORIGIN requests (Frontend usually runs on port 3000 or 5173)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -198,7 +198,7 @@ class ChatRequest(BaseModel):
 @app.post("/chat", response_model=AGUIResponse)
 async def chat_endpoint(request: ChatRequest):
     try:
-        # 這裡目前只用了 message (prompt), 未來可以加入 history 的處理
+        # Currently only message (prompt) is used, history handling can be added later
         response = generate_ag_ui_response(request.message)
         return response
     except Exception as e:
@@ -206,5 +206,5 @@ async def chat_endpoint(request: ChatRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
-    # 啟動 Server, Default port 8000
+    # Start Server, Default port 8000
     uvicorn.run(app, host="0.0.0.0", port=8000)

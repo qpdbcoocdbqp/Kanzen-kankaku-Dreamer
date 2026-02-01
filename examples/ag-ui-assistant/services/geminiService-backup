@@ -23,10 +23,10 @@ const agUiSchema: Schema = {
           content: { type: Type.STRING, description: "Markdown content. REQUIRED if type is 'markdown'." },
           title: { type: Type.STRING, description: "Title. REQUIRED if type is 'info_card', 'step_process' or 'table'." },
           description: { type: Type.STRING, description: "Description text. REQUIRED if type is 'info_card'." },
-          variant: { 
-            type: Type.STRING, 
+          variant: {
+            type: Type.STRING,
             enum: ["info", "warning", "success", "danger"],
-            description: "Visual style variant. REQUIRED if type is 'info_card'." 
+            description: "Visual style variant. REQUIRED if type is 'info_card'."
           },
           items: {
             type: Type.ARRAY,
@@ -81,7 +81,7 @@ export const generateAGUIResponse = async (
   history: { role: string; parts: { text: string }[] }[] = []
 ): Promise<AGUIResponse> => {
   try {
-    const modelId = "gemini-2.5-flash-lite"; 
+    const modelId = "gemini-2.5-flash-lite";
 
     const systemInstruction = `
       You are an intelligent assistant powered by Google Gemini, communicating via the AG-UI protocol.
@@ -127,7 +127,7 @@ export const generateAGUIResponse = async (
     const response = await ai.models.generateContent({
       model: modelId,
       contents: [
-        ...history, 
+        ...history,
         { role: 'user', parts: [{ text: prompt }] }
       ],
       config: {
@@ -155,7 +155,7 @@ export const generateAGUIResponse = async (
         {
           type: "info_card" as any,
           title: "Error",
-          description: "無法連接到 AI 服務，請稍後再試。請檢查您的網路連線或 API Key。",
+          description: "Unable to connect to AI service. Please try again later and check your network connection or API Key.",
           variant: "danger"
         }
       ],

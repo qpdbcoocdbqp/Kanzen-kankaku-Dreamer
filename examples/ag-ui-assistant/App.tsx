@@ -113,7 +113,7 @@ const App: React.FC = () => {
       <div className="mt-4 flex flex-wrap gap-2 animate-fadeIn">
         <div className="w-full text-xs font-medium text-slate-400 mb-1 flex items-center gap-1">
           <Sparkles className="w-3 h-3" />
-          建議提問
+          Suggested Questions
         </div>
         {suggestions.map((s, i) => (
           <button
@@ -147,7 +147,7 @@ const App: React.FC = () => {
               <Sparkles className="w-6 h-6" />
             </div>
             <div>
-              <h1 className="font-bold text-slate-900 dark:text-slate-100 leading-tight">AG-UI 問答助手</h1>
+              <h1 className="font-bold text-slate-900 dark:text-slate-100 leading-tight">AG-UI Q&A Assistant</h1>
               {/* <p className="text-xs text-slate-500 dark:text-slate-400">Powered by Google Gemini & ADK</p> */}
             </div>
           </div>
@@ -169,9 +169,9 @@ const App: React.FC = () => {
               <div className={`w-16 h-16 bg-${themeColor}-50 dark:bg-${themeColor}-900/20 text-${themeColor}-600 dark:text-${themeColor}-400 rounded-2xl flex items-center justify-center mx-auto mb-6`}>
                 <MessageSquare className="w-8 h-8" />
               </div>
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-3">歡迎使用智能問答</h2>
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-3">Welcome to Smart Q&A</h2>
               <p className="text-slate-600 dark:text-slate-400 mb-8">
-                我是您的 AI 助手。我會使用 AG-UI 協議，以結構化的方式（圖表、列表、卡片）回答您的問題。請嘗試以下問題：
+                I am your AI assistant. I will use the AG-UI protocol to answer your questions in a structured way (charts, lists, cards). Try these questions:
               </p>
 
               <div className="flex flex-col gap-3">
@@ -234,7 +234,7 @@ const App: React.FC = () => {
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !isLoading && handleSendMessage(inputValue)}
-            placeholder="請輸入您的問題..."
+            placeholder="Type your question here..."
             className={`w-full pl-6 pr-14 py-4 rounded-full border border-slate-300 dark:border-app-border bg-white dark:bg-app-card text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-${themeColor}-500 focus:border-transparent shadow-sm transition-all`}
             disabled={isLoading}
           />

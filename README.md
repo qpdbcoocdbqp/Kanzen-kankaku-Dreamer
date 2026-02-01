@@ -7,6 +7,10 @@ Test agent driven interface.  Playing with Kanzen kankaku Dreamer [完全感覚D
   >
   > Niche Syndrome
 
+* Recommendation
+
+  * [ONE OK ROCK - 完全在宅Dreamer](https://www.youtube.com/watch?v=qwj_TFDdUSI)
+
 ## Refernce
 
 * [streamlit/streamlit](https://github.com/streamlit/streamlit)

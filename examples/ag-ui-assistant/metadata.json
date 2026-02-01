@@ -1,0 +1,5 @@
+{
+  "name": "AG-UI Q&A Assistant",
+  "description": "A smart Q&A interface using Google Gemini structured output to drive a dynamic UI system (AG-UI Protocol).",
+  "requestFramePermissions": []
+}

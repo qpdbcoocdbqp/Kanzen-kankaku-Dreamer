@@ -238,7 +238,35 @@ def generate_ag_ui_response(prompt: str):
     - "suggestions" goes at the ROOT level, NOT inside "components".
     - Use Mermaid only inside markdown fenced code blocks with language "mermaid".
     - Do not output raw HTML as a markdown body unless it is intentionally being shown as source code.
+    - Do not answer in free-form prose outside the tool call.
+    - Always call the emit_agui_response tool exactly once.
+    - Keep suggestions short and actionable.
     """
+
+    tool_schema = {
+        "type": "function",
+        "function": {
+            "name": "emit_agui_response",
+            "description": "Return a structured AG-UI response that the frontend can render directly.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "components": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": "Structured AG-UI components."
+                    },
+                    "suggestions": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Short follow-up suggestions."
+                    }
+                },
+                "required": ["components", "suggestions"],
+                "additionalProperties": False
+            }
+        }
+    }
 
     completion = client.chat.completions.create(
         model="qwen",
@@ -248,10 +276,19 @@ def generate_ag_ui_response(prompt: str):
         ],
         max_tokens=8192,
         temperature=0.7,
-        response_format={"type": "json_object"},
+        tools=[tool_schema],
+        tool_choice={
+            "type": "function",
+            "function": {"name": "emit_agui_response"}
+        },
     )
-    content = completion.choices[0].message.content or "{}"
-    parsed = AGUIResponse.model_validate(json.loads(content))
+
+    tool_calls = completion.choices[0].message.tool_calls or []
+    if not tool_calls:
+        raise ValueError("Model did not return a tool call for emit_agui_response")
+
+    arguments = tool_calls[0].function.arguments or "{}"
+    parsed = AGUIResponse.model_validate(json.loads(arguments))
     logger.info(parsed)
     return parsed
 

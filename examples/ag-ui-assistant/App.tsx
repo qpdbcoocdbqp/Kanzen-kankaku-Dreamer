@@ -4,7 +4,7 @@ import { AGUIRenderer } from './components/AGUIRenderer';
 import { SkeletonLoader } from './components/SkeletonLoader';
 import { SettingsModal } from './components/SettingsModal';
 import { generateAGUIResponse } from './services/llamacppService';
-import { ChatMessage } from './types';
+import { AGUIResponse, ChatMessage, ComponentType } from './types';
 
 // Greeting default questions
 const DEFAULT_QUESTIONS = [
@@ -15,13 +15,57 @@ const DEFAULT_QUESTIONS = [
   "請用表格比較 React 和 Vue 的差異 (Table)"
 ];
 
-// Full palette of available colors
+const SAMPLE_MODEL_DATA: AGUIResponse = {
+  components: [
+    {
+      type: ComponentType.MARKDOWN,
+      content: [
+        '已建立客服儀表板首頁草稿。',
+        '',
+        '```mermaid',
+        'flowchart LR',
+        '  U[User] --> A[Agent]',
+        '  A --> J[Structured JSON]',
+        '  J --> C[Chat Components]',
+        '```'
+      ].join('\n')
+    },
+    {
+      type: ComponentType.STAT_GRID,
+      title: '今日營運摘要',
+      items: [
+        { label: '今日案件', value: '184', description: '較昨日增加 12%' },
+        { label: '平均首響時間', value: '4m', description: '維持在 SLA 內' },
+        { label: '自動解決率', value: '62%', description: '知識庫與自動回覆生效中' }
+      ]
+    },
+    {
+      type: ComponentType.CODE_BLOCK,
+      title: 'Surface HTML 範例',
+      language: 'html',
+      content: '<section class="dashboard-shell">...</section>'
+    },
+    {
+      type: ComponentType.ACTION_GROUP,
+      title: '你可以接著做',
+      items: [
+        { label: '改成管理員視角', action: 'switch-admin-view', description: '調整資訊層級與指標內容' },
+        { label: '加入案件趨勢圖', action: 'add-trend-chart', description: '補上 7 日流量與分類走勢' }
+      ]
+    }
+  ],
+  suggestions: ['改成管理員視角', '加入案件趨勢圖']
+};
 
-
-
+const SAMPLE_MODEL_RESPONSE: ChatMessage = {
+  id: 'sample-model-response',
+  role: 'model',
+  timestamp: Date.now(),
+  data: SAMPLE_MODEL_DATA
+};
 
 const App: React.FC = () => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([SAMPLE_MODEL_RESPONSE]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);

@@ -9,15 +9,24 @@ import {
   StepProcessComponent,
   TableComponent,
   DataItem,
-  StepItem
+  StepItem,
+  StatGridComponent,
+  StatItem,
+  CodeBlockComponent,
+  ActionGroupComponent,
+  ActionItem
 } from '../types';
+import { MermaidBlock } from './MermaidBlock';
 import {
   Info,
   AlertTriangle,
   CheckCircle2,
   Ban,
   ListChecks,
-  LayoutList
+  LayoutList,
+  Sparkles,
+  Code2,
+  ArrowRight
 } from 'lucide-react';
 
 /**
@@ -74,7 +83,36 @@ const MarkdownBlock: React.FC<RendererProps<MarkdownComponent>> = ({ data, theme
       prose-code:text-${themeColor}-600 dark:prose-code:text-${themeColor}-400 
       prose-code:bg-${themeColor}-50 dark:prose-code:bg-${themeColor}-900/30 
       prose-code:px-1 prose-code:py-0.5 prose-code:rounded-md prose-code:font-mono prose-code:text-sm`}>
-      <ReactMarkdown>{content}</ReactMarkdown>
+      <ReactMarkdown
+        components={{
+          code({ className, children }) {
+            const rawValue = String(children).replace(/\n$/, '');
+            const match = /language-(\w+)/.exec(className || '');
+            const language = match?.[1]?.toLowerCase();
+
+            if (language === 'mermaid') {
+              return (
+                <MermaidBlock
+                  chart={rawValue}
+                  fallback={
+                    <pre className="rounded-xl border border-slate-200 dark:border-app-border bg-slate-950 text-slate-100 p-4 overflow-x-auto text-sm">
+                      <code>{rawValue}</code>
+                    </pre>
+                  }
+                />
+              );
+            }
+
+            return (
+              <pre className="rounded-xl border border-slate-200 dark:border-app-border bg-slate-950 text-slate-100 p-4 overflow-x-auto text-sm">
+                <code>{rawValue}</code>
+              </pre>
+            );
+          }
+        }}
+      >
+        {content}
+      </ReactMarkdown>
     </div>
   );
 };
@@ -307,6 +345,95 @@ const Table: React.FC<RendererProps<TableComponent>> = ({ data }) => {
   );
 };
 
+const StatGrid: React.FC<RendererProps<StatGridComponent>> = ({ data, themeColor }) => {
+  if (!data.items || data.items.length === 0) return null;
+
+  return (
+    <div className="my-5">
+      {data.title && (
+        <h4 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
+          {data.title}
+        </h4>
+      )}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {data.items.map((item: StatItem, index: number) => (
+          <div
+            key={`${item.label}-${index}`}
+            className="rounded-2xl border border-slate-200 dark:border-app-border bg-white dark:bg-app-card p-4 shadow-sm"
+          >
+            <div className={`text-xs uppercase tracking-wide text-${themeColor}-600 dark:text-${themeColor}-400`}>
+              {item.label}
+            </div>
+            <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">
+              {item.value}
+            </div>
+            {item.description && (
+              <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                {item.description}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const CodeBlockCard: React.FC<RendererProps<CodeBlockComponent>> = ({ data }) => {
+  if (!data.content) return null;
+
+  return (
+    <div className="my-5 overflow-hidden rounded-2xl border border-slate-200 dark:border-app-border bg-slate-950 text-slate-100 shadow-sm">
+      <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3 text-xs uppercase tracking-wide text-slate-400">
+        <div className="flex items-center gap-2">
+          <Code2 className="h-4 w-4" />
+          <span>{data.title || 'Code Block'}</span>
+        </div>
+        <span>{data.language || 'text'}</span>
+      </div>
+      <pre className="overflow-x-auto p-4 text-sm">
+        <code>{data.content}</code>
+      </pre>
+    </div>
+  );
+};
+
+const ActionGroup: React.FC<RendererProps<ActionGroupComponent>> = ({ data, themeColor }) => {
+  if (!data.items || data.items.length === 0) return null;
+
+  return (
+    <div className="my-5 rounded-2xl border border-slate-200 dark:border-app-border bg-white dark:bg-app-card p-4 shadow-sm">
+      {data.title && (
+        <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+          <Sparkles className={`h-4 w-4 text-${themeColor}-600 dark:text-${themeColor}-400`} />
+          <span>{data.title}</span>
+        </div>
+      )}
+      <div className="flex flex-col gap-2">
+        {data.items.map((item: ActionItem, index: number) => (
+          <button
+            key={`${item.action}-${index}`}
+            type="button"
+            className={`flex items-center justify-between rounded-xl border border-slate-200 dark:border-app-border bg-slate-50 dark:bg-zinc-800/50 px-4 py-3 text-left transition-colors hover:border-${themeColor}-300 hover:bg-${themeColor}-50 dark:hover:border-${themeColor}-700 dark:hover:bg-${themeColor}-900/20`}
+          >
+            <div>
+              <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                {item.label}
+              </div>
+              {item.description && (
+                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  {item.description}
+                </div>
+              )}
+            </div>
+            <ArrowRight className={`h-4 w-4 text-${themeColor}-500 dark:text-${themeColor}-400`} />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 export const AGUIRenderer: React.FC<{ components: AGUIComponent[], themeColor?: string }> = ({ components, themeColor = 'indigo' }) => {
   if (!components || !Array.isArray(components)) return null;
 
@@ -330,8 +457,18 @@ export const AGUIRenderer: React.FC<{ components: AGUIComponent[], themeColor?: 
                     return <StepProcess data={component} themeColor={themeColor} />;
                   case ComponentType.TABLE:
                     return <Table data={component} themeColor={themeColor} />;
+                  case ComponentType.STAT_GRID:
+                    return <StatGrid data={component} themeColor={themeColor} />;
+                  case ComponentType.CODE_BLOCK:
+                    return <CodeBlockCard data={component} themeColor={themeColor} />;
+                  case ComponentType.ACTION_GROUP:
+                    return <ActionGroup data={component} themeColor={themeColor} />;
                   default:
-                    return null;
+                    return (
+                      <div className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-900/20 dark:text-amber-300">
+                        Unsupported component type
+                      </div>
+                    );
                 }
               } catch (e) {
                 console.error("Error rendering component:", component, e);

@@ -102,16 +102,59 @@ source .venv/bin/activate
 
 * Google AI studio generate UI.
 
+  * Current local implementation highlights
+    * component-based chat renderer for structured JSON output
+    * Mermaid diagram rendering inside Markdown code fences
+    * additional chat component types:
+      * `stat_grid`
+      * `code_block`
+      * `action_group`
+    * backend proxy uses OpenAI-compatible API at `http://localhost:9006/v1`
+    * current backend model: `qwen`
+
   ```sh
   cd examples/ag-ui-assistant
-  pnpm install
+  npm install
 
   # In new terminal, start agent server
   uv run python -m services.agent_server
 
   # In new terminal, start AG-UI
-  pnpm run dev
+  npm run dev
   ```
 
   * agent host: `http://localhost:8000`
-  * AG-UI host : `http://localhost:3000`
+  * AG-UI host : `http://localhost:5173` or the Vite port shown in terminal
+  * frontend API target: `VITE_API_URL=http://localhost:8000/chat`
+  * backend LLM target: `http://localhost:9006/v1`
+
+  * Example structured response payload
+
+    ```json
+    {
+      "components": [
+        {
+          "type": "markdown",
+          "content": "```mermaid\nflowchart LR\n  U[User] --> A[Agent]\n  A --> J[Structured JSON]\n  J --> C[Chat Components]\n```\n"
+        },
+        {
+          "type": "stat_grid",
+          "title": "今日營運摘要",
+          "items": [
+            { "label": "今日案件", "value": "184" },
+            { "label": "平均首響時間", "value": "4m" }
+          ]
+        },
+        {
+          "type": "action_group",
+          "title": "你可以接著做",
+          "items": [
+            { "label": "改成管理員視角", "action": "switch-admin-view" }
+          ]
+        }
+      ],
+      "suggestions": [
+        "加入案件趨勢圖"
+      ]
+    }
+    ```

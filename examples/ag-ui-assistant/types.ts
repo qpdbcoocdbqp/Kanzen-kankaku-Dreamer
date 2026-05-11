@@ -8,7 +8,10 @@ export enum ComponentType {
   INFO_CARD = 'info_card',
   DATA_LIST = 'data_list',
   STEP_PROCESS = 'step_process',
-  TABLE = 'table'
+  TABLE = 'table',
+  STAT_GRID = 'stat_grid',
+  CODE_BLOCK = 'code_block',
+  ACTION_GROUP = 'action_group'
 }
 
 export interface BaseComponent {
@@ -58,12 +61,46 @@ export interface TableComponent extends BaseComponent {
   rows: string[][];
 }
 
+export interface StatItem {
+  label: string;
+  value: string;
+  description?: string;
+}
+
+export interface StatGridComponent extends BaseComponent {
+  type: ComponentType.STAT_GRID;
+  title?: string;
+  items: StatItem[];
+}
+
+export interface CodeBlockComponent extends BaseComponent {
+  type: ComponentType.CODE_BLOCK;
+  title?: string;
+  language?: string;
+  content: string;
+}
+
+export interface ActionItem {
+  label: string;
+  action: string;
+  description?: string;
+}
+
+export interface ActionGroupComponent extends BaseComponent {
+  type: ComponentType.ACTION_GROUP;
+  title?: string;
+  items: ActionItem[];
+}
+
 export type AGUIComponent = 
   | MarkdownComponent 
   | InfoCardComponent 
   | DataListComponent
   | StepProcessComponent
-  | TableComponent;
+  | TableComponent
+  | StatGridComponent
+  | CodeBlockComponent
+  | ActionGroupComponent;
 
 export interface AGUIResponse {
   components: AGUIComponent[];

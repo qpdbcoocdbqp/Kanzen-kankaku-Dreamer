@@ -16,6 +16,9 @@ class ComponentType(str, Enum):
     DATA_LIST = 'data_list'
     STEP_PROCESS = 'step_process'
     TABLE = 'table'
+    STAT_GRID = 'stat_grid'
+    CODE_BLOCK = 'code_block'
+    ACTION_GROUP = 'action_group'
 
 class BaseComponent(BaseModel):
     pass
@@ -81,9 +84,62 @@ class TableComponent(BaseComponent):
     headers: List[str]
     rows: List[List[str]]
 
+class StatItem(BaseModel):
+    label: str
+    value: Union[str, List[Any]]
+    description: Optional[Union[str, List[Any]]] = None
+
+    @field_validator('value', 'description')
+    @classmethod
+    def join_list(cls, v):
+        if v is None:
+            return v
+        if isinstance(v, list):
+            return "\n".join(str(i) for i in v)
+        return str(v)
+
+class StatGridComponent(BaseComponent):
+    type: Literal[ComponentType.STAT_GRID] = ComponentType.STAT_GRID
+    title: Optional[str] = None
+    items: List[StatItem]
+
+class CodeBlockComponent(BaseComponent):
+    type: Literal[ComponentType.CODE_BLOCK] = ComponentType.CODE_BLOCK
+    title: Optional[str] = None
+    language: Optional[str] = None
+    content: str
+
+class ActionItem(BaseModel):
+    label: str
+    action: str
+    description: Optional[Union[str, List[Any]]] = None
+
+    @field_validator('description')
+    @classmethod
+    def join_list(cls, v):
+        if v is None:
+            return v
+        if isinstance(v, list):
+            return "\n".join(str(i) for i in v)
+        return str(v)
+
+class ActionGroupComponent(BaseComponent):
+    type: Literal[ComponentType.ACTION_GROUP] = ComponentType.ACTION_GROUP
+    title: Optional[str] = None
+    items: List[ActionItem]
+
 # Union type, using discriminator
 ComponentUnion = Annotated[
-    Union[MarkdownComponent, InfoCardComponent, DataListComponent, StepProcessComponent, TableComponent],
+    Union[
+        MarkdownComponent,
+        InfoCardComponent,
+        DataListComponent,
+        StepProcessComponent,
+        TableComponent,
+        StatGridComponent,
+        CodeBlockComponent,
+        ActionGroupComponent
+    ],
     Field(discriminator='type')
 ]
 
@@ -119,7 +175,7 @@ def generate_ag_ui_response(prompt: str):
     Available Components (for the "components" list):
 
     1. [type="markdown"]
-       - Use for: General text, paragraphs.
+       - Use for: General text, paragraphs, summaries, and Mermaid diagrams in fenced code blocks.
        - Fields:
          - type: "markdown"
          - content: string (Markdown format)
@@ -129,8 +185,8 @@ def generate_ag_ui_response(prompt: str):
        - Fields:
          - type: "info_card"
          - title: string
-         - description: string (Must not be empty)
-         - variant: "info" | "warning" | "success" | "danger" (REQUIRED)
+         - description: string
+         - variant: "info" | "warning" | "success" | "danger"
 
     3. [type="data_list"]
        - Use for: Key-value data.
@@ -151,17 +207,40 @@ def generate_ag_ui_response(prompt: str):
        - Fields:
          - type: "table"
          - title: string (optional)
-         - headers: List of strings (column names)
-         - rows: List of List of strings (data rows matching headers)
+         - headers: List of strings
+         - rows: List of List of strings
+
+    6. [type="stat_grid"]
+       - Use for: KPI summaries and metric snapshots.
+       - Fields:
+         - type: "stat_grid"
+         - title: string (optional)
+         - items: List of objects with "label", "value", and optional "description"
+
+    7. [type="code_block"]
+       - Use for: Raw code or source snippets such as JSON, HTML, CSS, TypeScript, or Python.
+       - Fields:
+         - type: "code_block"
+         - title: string (optional)
+         - language: string (optional)
+         - content: string
+
+    8. [type="action_group"]
+       - Use for: Suggested next steps or structured follow-up options.
+       - Fields:
+         - type: "action_group"
+         - title: string (optional)
+         - items: List of objects with "label", "action", and optional "description"
 
     IMPORTANT RULES:
-    - DO NOT use any component types other than the 5 listed above. (NO suggestions as components).
+    - DO NOT use any component types other than the 8 listed above.
     - "suggestions" goes at the ROOT level, NOT inside "components".
-    - Ensure ALL required fields (especially 'variant' for info_card) are present.
+    - Use Mermaid only inside markdown fenced code blocks with language "mermaid".
+    - Do not output raw HTML as a markdown body unless it is intentionally being shown as source code.
     """
 
     completion = client.chat.completions.parse(
-        model="mxt",
+        model="qwen",
         messages=[
             {"role": "system", "content": system_instruction},
             {"role": "user", "content": prompt},

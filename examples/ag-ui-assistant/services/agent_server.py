@@ -1,5 +1,6 @@
 import os
 from enum import Enum
+import json
 from typing import List, Optional, Union, Annotated, Literal, Any
 from pydantic import BaseModel, Field, field_validator
 from openai import OpenAI
@@ -239,7 +240,7 @@ def generate_ag_ui_response(prompt: str):
     - Do not output raw HTML as a markdown body unless it is intentionally being shown as source code.
     """
 
-    completion = client.chat.completions.parse(
+    completion = client.chat.completions.create(
         model="qwen",
         messages=[
             {"role": "system", "content": system_instruction},
@@ -247,10 +248,12 @@ def generate_ag_ui_response(prompt: str):
         ],
         max_tokens=8192,
         temperature=0.7,
-        response_format=AGUIResponse,
+        response_format={"type": "json_object"},
     )
-    logger.info(completion.choices[0].message.parsed)
-    return completion.choices[0].message.parsed
+    content = completion.choices[0].message.content or "{}"
+    parsed = AGUIResponse.model_validate(json.loads(content))
+    logger.info(parsed)
+    return parsed
 
 
 # --- 3. FastAPI Server Setup ---

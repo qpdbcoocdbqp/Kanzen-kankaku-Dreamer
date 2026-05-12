@@ -15,6 +15,55 @@ const DEFAULT_QUESTIONS = [
   "請用表格比較 React 和 Vue 的差異 (Table)"
 ];
 
+/** One-click prompts for exercising each AG-UI component shape returned via emit_agui_response (tool call). */
+const TOOL_FORMAT_TEST_PROMPTS: { label: string; prompt: string }[] = [
+  {
+    label: 'Markdown',
+    prompt:
+      '請透過 emit_agui_response 回覆：components 至少含一個 type 為 markdown，繁體中文簡述 AG-UI，並在 markdown 內含 ```mermaid 流程圖程式碼區塊。suggestions 給 0～2 則。'
+  },
+  {
+    label: 'InfoCard',
+    prompt:
+      '請透過 emit_agui_response：僅使用一個 info_card，variant 為 warning，標題與 description 為繁體中文的系統維護公告。suggestions 可為空。'
+  },
+  {
+    label: 'DataList',
+    prompt:
+      '請透過 emit_agui_response：使用 data_list，列出至少四項「標籤／值」的繁體中文技術棧或相依套件範例（title 可選）。'
+  },
+  {
+    label: 'StepProcess',
+    prompt:
+      '請透過 emit_agui_response：使用 step_process，以繁體中文列出在本機啟動此專案（npm install、後端、前端）的三個以上步驟。'
+  },
+  {
+    label: 'Table',
+    prompt:
+      '請透過 emit_agui_response：使用 table，繁體中文表頭與至少兩列，比較 React 與 Vue（或任意兩項前端框架）。'
+  },
+  {
+    label: 'StatGrid',
+    prompt:
+      '請透過 emit_agui_response：使用 stat_grid，title 為繁體中文營運摘要，至少三個 StatItem（含 label、value、description）。'
+  },
+  {
+    label: 'CodeBlock',
+    prompt:
+      '請透過 emit_agui_response：使用 code_block，language 為 typescript，content 為一段簡短的 fetch 呼叫 /chat 的範例程式碼（字串即可）。'
+  },
+  {
+    label: 'ActionGroup',
+    prompt:
+      '請透過 emit_agui_response：使用 action_group，至少兩個項目（label、action、description 皆繁體中文），title 說明後續可執行動作。'
+  },
+  {
+    label: '混合',
+    prompt:
+      '請透過 emit_agui_response：components 依序包含 markdown（簡短前言）、data_list（兩項）、info_card（variant success），suggestions 給兩則繁體中文追問。'
+  }
+];
+
 const SAMPLE_MODEL_DATA: AGUIResponse = {
   components: [
     {
@@ -124,7 +173,7 @@ const App: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const history = messages.map(m => ({
+      const history = [...messages, userMsg].map(m => ({
         role: m.role,
         parts: [{ text: m.role === 'user' ? m.content! : JSON.stringify(m.data) }]
       }));
@@ -272,6 +321,24 @@ const App: React.FC = () => {
 
       {/* Input Area */}
       <div className="sticky bottom-0 bg-white/80 dark:bg-[#1e1e1e]/80 backdrop-blur-md border-t border-slate-200 dark:border-app-border p-4 shadow-lg z-40 transition-colors duration-300">
+        <div className="max-w-3xl mx-auto mb-3">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400 mb-2 px-1">
+            Tool 格式測試（emit_agui_response）
+          </p>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {TOOL_FORMAT_TEST_PROMPTS.map(({ label, prompt }) => (
+              <button
+                key={label}
+                type="button"
+                disabled={isLoading}
+                onClick={() => handleSendMessage(prompt)}
+                className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 disabled:pointer-events-none border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:border-${themeColor}-300 dark:border-app-border dark:bg-zinc-800/80 dark:text-slate-200 dark:hover:bg-zinc-700`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="max-w-3xl mx-auto relative">
           <input
             type="text"

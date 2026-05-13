@@ -8,11 +8,11 @@ import { AGUIResponse, ChatMessage, ComponentType } from './types';
 
 // Greeting default questions
 const DEFAULT_QUESTIONS = [
-  "請使用 Markdown 介紹 AG-UI (Markdown)",
-  "顯示一個關於系統維護的警告卡片 (InfoCard)",
-  "列出使用到的技術棧清單 (DataList)",
-  "說明如何啟動開發伺服器的步驟 (StepProcess)",
-  "請用表格比較 React 和 Vue 的差異 (Table)"
+  "請使用 Markdown 介紹 AG-UI",
+  "顯示一個關於系統維護的警告卡片",
+  "列出使用到的技術棧清單",
+  "說明如何啟動開發伺服器的步驟",
+  "請用表格比較 React 和 Vue 的差異"
 ];
 
 /** One-click prompts for exercising each AG-UI component shape returned via emit_agui_response (tool call). */

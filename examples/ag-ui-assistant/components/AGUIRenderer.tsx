@@ -14,9 +14,11 @@ import {
   StatItem,
   CodeBlockComponent,
   ActionGroupComponent,
-  ActionItem
+  ActionItem,
+  SurfaceComponent
 } from '../types';
 import { MermaidBlock } from './MermaidBlock';
+import { SurfaceRenderer } from './SurfaceRenderer';
 import {
   Info,
   AlertTriangle,
@@ -463,6 +465,8 @@ export const AGUIRenderer: React.FC<{ components: AGUIComponent[], themeColor?: 
                     return <CodeBlockCard data={component} themeColor={themeColor} />;
                   case ComponentType.ACTION_GROUP:
                     return <ActionGroup data={component} themeColor={themeColor} />;
+                  case ComponentType.SURFACE:
+                    return <SurfaceRenderer data={component as SurfaceComponent} themeColor={themeColor} />;
                   default:
                     return (
                       <div className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-900/20 dark:text-amber-300">

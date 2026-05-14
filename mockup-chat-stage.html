@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent UI Mockup</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --panel: rgba(255, 250, 242, 0.92);
+      --panel-strong: #fffdf8;
+      --ink: #1d2a2a;
+      --muted: #61706f;
+      --line: #d8cdbd;
+      --accent: #0f766e;
+      --accent-soft: #d7efe8;
+      --warn: #b45309;
+      --shadow: 0 20px 50px rgba(60, 42, 20, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Noto Sans TC", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(15, 118, 110, 0.12), transparent 28%),
+        radial-gradient(circle at bottom right, rgba(180, 83, 9, 0.08), transparent 24%),
+        var(--bg);
+      color: var(--ink);
+    }
+
+    .shell {
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .frame {
+      max-width: 1400px;
+      margin: 0 auto;
+      border: 1px solid rgba(216, 205, 189, 0.9);
+      border-radius: 28px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      background: rgba(255, 255, 255, 0.55);
+      backdrop-filter: blur(18px);
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 248, 238, 0.85);
+    }
+
+    .title {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .badge {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #0f766e, #115e59);
+      color: white;
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+    }
+
+    .title h1 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .title p {
+      margin: 4px 0 0;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .tabs {
+      display: flex;
+      gap: 10px;
+    }
+
+    .tab {
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+      background: rgba(255,255,255,0.7);
+    }
+
+    .tab.active {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 420px 1fr;
+      min-height: 760px;
+    }
+
+    .chat-panel {
+      border-right: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255, 251, 244, 0.9), rgba(248, 242, 233, 0.96));
+      display: flex;
+      flex-direction: column;
+    }
+
+    .chat-header {
+      padding: 20px 22px 14px;
+      border-bottom: 1px solid rgba(216, 205, 189, 0.75);
+    }
+
+    .chat-header h2,
+    .stage-header h2 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .chat-header p,
+    .stage-header p {
+      margin: 6px 0 0;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .messages {
+      flex: 1;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow: auto;
+    }
+
+    .msg {
+      max-width: 92%;
+      padding: 14px 16px;
+      border-radius: 20px;
+      border: 1px solid transparent;
+      box-shadow: 0 8px 24px rgba(52, 39, 23, 0.06);
+    }
+
+    .msg.user {
+      align-self: flex-end;
+      background: #1f2937;
+      color: white;
+      border-bottom-right-radius: 8px;
+    }
+
+    .msg.agent {
+      background: var(--panel-strong);
+      border-color: rgba(216, 205, 189, 0.85);
+      border-bottom-left-radius: 8px;
+    }
+
+    .msg-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+
+    .markdown {
+      line-height: 1.65;
+      font-size: 14px;
+    }
+
+    .info-card {
+      margin-top: 12px;
+      padding: 14px;
+      border-radius: 16px;
+      background: #fff8eb;
+      border-left: 4px solid var(--warn);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .table {
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+
+    .table .row {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+    }
+
+    .table .row > div {
+      padding: 11px 12px;
+      font-size: 13px;
+      border-top: 1px solid var(--line);
+      background: #fffdfa;
+    }
+
+    .table .row.header > div {
+      font-weight: 700;
+      background: #f6f1e8;
+      border-top: 0;
+    }
+
+    .composer {
+      padding: 16px 18px 18px;
+      border-top: 1px solid var(--line);
+      background: rgba(255, 251, 244, 0.92);
+    }
+
+    .composer-box {
+      display: flex;
+      gap: 10px;
+      padding: 10px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: white;
+    }
+
+    .composer-input {
+      flex: 1;
+      padding: 10px 12px;
+      border: 0;
+      font-size: 14px;
+      color: var(--ink);
+      outline: none;
+    }
+
+    .composer button {
+      border: 0;
+      background: var(--accent);
+      color: white;
+      border-radius: 14px;
+      padding: 0 16px;
+      font-weight: 700;
+    }
+
+    .stage-panel {
+      background:
+        linear-gradient(180deg, rgba(253, 250, 246, 0.94), rgba(244, 239, 230, 0.96));
+      display: flex;
+      flex-direction: column;
+    }
+
+    .stage-header {
+      padding: 20px 22px 14px;
+      border-bottom: 1px solid rgba(216, 205, 189, 0.75);
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: flex-start;
+    }
+
+    .stage-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .pill {
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .stage-content {
+      padding: 22px;
+      display: grid;
+      gap: 18px;
+      grid-template-rows: auto 1fr;
+      min-height: 0;
+    }
+
+    .surface-tabs {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .surface-tab {
+      padding: 10px 14px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.7);
+      font-size: 13px;
+    }
+
+    .surface-tab.active {
+      background: var(--accent-soft);
+      border-color: rgba(15, 118, 110, 0.25);
+      color: #0b5c55;
+      font-weight: 700;
+    }
+
+    .stage-canvas {
+      border-radius: 24px;
+      border: 1px solid rgba(216, 205, 189, 0.92);
+      background: white;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.65);
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: 54px 1fr;
+      min-height: 540px;
+    }
+
+    .canvas-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--line);
+      background: #f7f3ec;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .dots {
+      display: flex;
+      gap: 8px;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: #d6ccbc;
+    }
+
+    .surface-app {
+      padding: 22px;
+      background: linear-gradient(180deg, #faf8f2, #f3efe6);
+    }
+
+    .app-shell {
+      height: 100%;
+      border-radius: 24px;
+      background: #fcfbf8;
+      border: 1px solid #e6dbc8;
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: 220px 1fr;
+    }
+
+    .app-nav {
+      padding: 18px;
+      background: #153c3a;
+      color: rgba(255,255,255,0.92);
+    }
+
+    .app-nav h3 {
+      margin: 0 0 20px;
+      font-size: 15px;
+    }
+
+    .nav-item {
+      padding: 12px 14px;
+      border-radius: 14px;
+      margin-bottom: 10px;
+      background: rgba(255,255,255,0.08);
+      font-size: 13px;
+    }
+
+    .nav-item.active {
+      background: rgba(215, 239, 232, 0.18);
+      border: 1px solid rgba(215, 239, 232, 0.24);
+    }
+
+    .app-main {
+      padding: 20px;
+      display: grid;
+      gap: 16px;
+      grid-template-rows: auto auto 1fr;
+    }
+
+    .hero {
+      padding: 18px 20px;
+      border-radius: 20px;
+      background: linear-gradient(135deg, #0f766e, #155e75);
+      color: white;
+    }
+
+    .hero h3 {
+      margin: 0 0 8px;
+      font-size: 22px;
+    }
+
+    .hero p {
+      margin: 0;
+      max-width: 640px;
+      font-size: 14px;
+      line-height: 1.6;
+      color: rgba(255,255,255,0.84);
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+
+    .metric {
+      padding: 16px;
+      border: 1px solid #e5ddcf;
+      border-radius: 18px;
+      background: white;
+    }
+
+    .metric span {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .metric strong {
+      font-size: 24px;
+      color: var(--ink);
+    }
+
+    .content-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 16px;
+    }
+
+    .panel {
+      border: 1px solid #e5ddcf;
+      border-radius: 18px;
+      background: white;
+      padding: 18px;
+    }
+
+    .panel h4 {
+      margin: 0 0 12px;
+      font-size: 15px;
+    }
+
+    .panel ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      line-height: 1.8;
+      font-size: 13px;
+    }
+
+    .mini-table {
+      display: grid;
+      gap: 10px;
+    }
+
+    .mini-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: #f7f4ee;
+      font-size: 13px;
+    }
+
+    @media (max-width: 1100px) {
+      .layout { grid-template-columns: 1fr; }
+      .chat-panel { border-right: 0; border-bottom: 1px solid var(--line); }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="frame">
+      <div class="topbar">
+        <div class="title">
+          <div class="badge">AI</div>
+          <div>
+            <h1>Agent Conversation Renderer</h1>
+            <p>聊天室渲染結構化 JSON，右側舞台顯示完整應用介面輸出</p>
+          </div>
+        </div>
+        <div class="tabs">
+          <div class="tab active">Hybrid</div>
+          <div class="tab">Chat Only</div>
+          <div class="tab">Surface Only</div>
+        </div>
+      </div>
+
+      <div class="layout">
+        <section class="chat-panel">
+          <div class="chat-header">
+            <h2>對話流</h2>
+            <p>左側承接 agent 回傳的結構化元件，讓摘要、警示、表格可以直接出現在聊天室氣泡內。</p>
+          </div>
+
+          <div class="messages">
+            <div class="msg user">
+              <div class="msg-label">User</div>
+              請幫我產生一個客服儀表板首頁，並用結構化方式說明重點。
+            </div>
+
+            <div class="msg agent">
+              <div class="msg-label">Agent / markdown</div>
+              <div class="markdown">
+                已建立一個客服儀表板首頁草稿，包含總覽 KPI、待處理案件、知識庫入口與快速操作區。
+              </div>
+
+              <div class="info-card">
+                <strong>Warning</strong><br>
+                右側舞台顯示的是完整應用介面輸出，因此比聊天室內容更適合放 dashboard、form、workspace 這類大型結果。
+              </div>
+
+              <div class="table">
+                <div class="row header">
+                  <div>輸出通道</div>
+                  <div>用途</div>
+                </div>
+                <div class="row">
+                  <div>Chat components</div>
+                  <div>摘要、說明、表格、步驟</div>
+                </div>
+                <div class="row">
+                  <div>Stage surface</div>
+                  <div>HTML/CSS 應用介面預覽</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="composer">
+            <div class="composer-box">
+              <input class="composer-input" value="輸入下一個指令，例如：改成管理員視角" readonly>
+              <button>Send</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="stage-panel">
+          <div class="stage-header">
+            <div>
+              <h2>多型內容舞台</h2>
+              <p>當 agent 回傳 `html + css` surface payload 時，在這裡以較大畫布渲染，和聊天室摘要同步對照。</p>
+            </div>
+            <div class="stage-actions">
+              <div class="pill">surface.kind: html</div>
+              <div class="pill">viewport: desktop</div>
+            </div>
+          </div>
+
+          <div class="stage-content">
+            <div class="surface-tabs">
+              <div class="surface-tab active">Rendered Preview</div>
+              <div class="surface-tab">HTML Source</div>
+              <div class="surface-tab">CSS Source</div>
+              <div class="surface-tab">Payload JSON</div>
+            </div>
+
+            <div class="stage-canvas">
+              <div class="canvas-bar">
+                <div class="dots">
+                  <div class="dot"></div>
+                  <div class="dot"></div>
+                  <div class="dot"></div>
+                </div>
+                <div>customer-support-dashboard.html</div>
+                <div>Live surface render</div>
+              </div>
+
+              <div class="surface-app">
+                <div class="app-shell">
+                  <aside class="app-nav">
+                    <h3>Support OS</h3>
+                    <div class="nav-item active">總覽儀表板</div>
+                    <div class="nav-item">待處理案件</div>
+                    <div class="nav-item">知識庫</div>
+                    <div class="nav-item">自動化規則</div>
+                  </aside>
+
+                  <main class="app-main">
+                    <div class="hero">
+                      <h3>客服營運總覽</h3>
+                      <p>今日請求量、首響時間與升級率都集中在同一個首頁，方便 agent 產出的 UI 直接被人類審閱或延伸。</p>
+                    </div>
+
+                    <div class="metrics">
+                      <div class="metric">
+                        <span>今日案件</span>
+                        <strong>184</strong>
+                      </div>
+                      <div class="metric">
+                        <span>平均首響時間</span>
+                        <strong>4m</strong>
+                      </div>
+                      <div class="metric">
+                        <span>自動解決率</span>
+                        <strong>62%</strong>
+                      </div>
+                    </div>
+
+                    <div class="content-grid">
+                      <section class="panel">
+                        <h4>待辦建議</h4>
+                        <ul>
+                          <li>優先處理付款失敗與物流延誤類型工單</li>
+                          <li>把高頻問答同步進知識庫，減少重複回覆</li>
+                          <li>為 VIP 客戶建立快速升級入口</li>
+                        </ul>
+                      </section>
+
+                      <section class="panel">
+                        <h4>隊列摘要</h4>
+                        <div class="mini-table">
+                          <div class="mini-row"><span>付款問題</span><strong>39</strong></div>
+                          <div class="mini-row"><span>物流異常</span><strong>27</strong></div>
+                          <div class="mini-row"><span>帳號支援</span><strong>18</strong></div>
+                        </div>
+                      </section>
+                    </div>
+                  </main>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

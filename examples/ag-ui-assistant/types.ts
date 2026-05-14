@@ -11,7 +11,15 @@ export enum ComponentType {
   TABLE = 'table',
   STAT_GRID = 'stat_grid',
   CODE_BLOCK = 'code_block',
-  ACTION_GROUP = 'action_group'
+  ACTION_GROUP = 'action_group',
+  SURFACE = 'surface'
+}
+
+export enum SurfaceKind {
+  HTML = 'html',
+  SVG = 'svg',
+  MARKDOWN = 'markdown',
+  IFRAME = 'iframe'
 }
 
 export interface BaseComponent {
@@ -92,15 +100,27 @@ export interface ActionGroupComponent extends BaseComponent {
   items: ActionItem[];
 }
 
-export type AGUIComponent = 
-  | MarkdownComponent 
-  | InfoCardComponent 
+export interface SurfaceComponent extends BaseComponent {
+  type: ComponentType.SURFACE;
+  kind: SurfaceKind;
+  html?: string;
+  css?: string;
+  svg?: string;
+  markdown?: string;
+  title?: string;
+  description?: string;
+}
+
+export type AGUIComponent =
+  | MarkdownComponent
+  | InfoCardComponent
   | DataListComponent
   | StepProcessComponent
   | TableComponent
   | StatGridComponent
   | CodeBlockComponent
-  | ActionGroupComponent;
+  | ActionGroupComponent
+  | SurfaceComponent;
 
 export interface AGUIResponse {
   components: AGUIComponent[];

@@ -1,18 +1,68 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Sparkles, User, MessageSquare, Settings } from 'lucide-react';
+import { Send, Sparkles, User, MessageSquare, Settings, ChevronRight, ChevronLeft } from 'lucide-react';
 import { AGUIRenderer } from './components/AGUIRenderer';
 import { SkeletonLoader } from './components/SkeletonLoader';
 import { SettingsModal } from './components/SettingsModal';
+import { StagePanel } from './components/StagePanel';
 import { generateAGUIResponse } from './services/llamacppService';
-import { AGUIResponse, ChatMessage, ComponentType } from './types';
+import { AGUIResponse, ChatMessage, ComponentType, SurfaceComponent, SurfaceKind } from './types';
 
 // Greeting default questions
 const DEFAULT_QUESTIONS = [
-  "請使用 Markdown 介紹 AG-UI (Markdown)",
-  "顯示一個關於系統維護的警告卡片 (InfoCard)",
-  "列出使用到的技術棧清單 (DataList)",
-  "說明如何啟動開發伺服器的步驟 (StepProcess)",
-  "請用表格比較 React 和 Vue 的差異 (Table)"
+  "請使用 Markdown 介紹 AG-UI",
+  "顯示一個關於系統維護的警告卡片",
+  "列出使用到的技術棧清單",
+  "說明如何啟動開發伺服器的步驟",
+  "請用表格比較 React 和 Vue 的差異"
+];
+
+/** One-click prompts for exercising each AG-UI component shape returned via emit_agui_response (tool call). */
+const TOOL_FORMAT_TEST_PROMPTS: { label: string; prompt: string }[] = [
+  {
+    label: 'Markdown',
+    prompt:
+      '請透過 emit_agui_response 回覆：components 至少含一個 type 為 markdown，繁體中文簡述 AG-UI，並在 markdown 內含 ```mermaid 流程圖程式碼區塊。suggestions 給 0～2 則。'
+  },
+  {
+    label: 'InfoCard',
+    prompt:
+      '請透過 emit_agui_response：僅使用一個 info_card，variant 為 warning，標題與 description 為繁體中文的系統維護公告。suggestions 可為空。'
+  },
+  {
+    label: 'DataList',
+    prompt:
+      '請透過 emit_agui_response：使用 data_list，列出至少四項「標籤／值」的繁體中文技術棧或相依套件範例（title 可選）。'
+  },
+  {
+    label: 'StepProcess',
+    prompt:
+      '請透過 emit_agui_response：使用 step_process，以繁體中文列出在本機啟動此專案（npm install、後端、前端）的三個以上步驟。'
+  },
+  {
+    label: 'Table',
+    prompt:
+      '請透過 emit_agui_response：使用 table，繁體中文表頭與至少兩列，比較 React 與 Vue（或任意兩項前端框架）。'
+  },
+  {
+    label: 'StatGrid',
+    prompt:
+      '請透過 emit_agui_response：使用 stat_grid，title 為繁體中文營運摘要，至少三個 StatItem（含 label、value、description）。'
+  },
+  {
+    label: 'CodeBlock',
+    prompt:
+      '請透過 emit_agui_response：使用 code_block，language 為 typescript，content 為一段簡短的 fetch 呼叫 /chat 的範例程式碼（字串即可）。'
+  },
+  {
+    label: 'ActionGroup',
+    prompt:
+      '請透過 emit_agui_response：使用 action_group，至少兩個項目（label、action、description 皆繁體中文），title 說明後續可執行動作。'
+  },
+  {
+    label: '混合',
+    prompt:
+      '請透過 emit_agui_response：components 依序包含 markdown（簡短前言）、data_list（兩項）、info_card（variant success），suggestions 給兩則繁體中文追問。'
+  }
 ];
 
 const SAMPLE_MODEL_DATA: AGUIResponse = {
@@ -27,6 +77,7 @@ const SAMPLE_MODEL_DATA: AGUIResponse = {
         '  U[User] --> A[Agent]',
         '  A --> J[Structured JSON]',
         '  J --> C[Chat Components]',
+        '  J --> S[Surface Render]',
         '```'
       ].join('\n')
     },
@@ -40,10 +91,64 @@ const SAMPLE_MODEL_DATA: AGUIResponse = {
       ]
     },
     {
-      type: ComponentType.CODE_BLOCK,
-      title: 'Surface HTML 範例',
-      language: 'html',
-      content: '<section class="dashboard-shell">...</section>'
+      type: ComponentType.SURFACE,
+      kind: SurfaceKind.HTML,
+      title: '客服儀表板預覽',
+      description: '完整應用介面的 HTML 預覽，包含側邊導航與主要內容區',
+      html: `<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f8f9fa; }
+    .shell { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+    .nav { background: #153c3a; color: white; padding: 24px 18px; }
+    .nav h3 { margin-bottom: 20px; font-size: 16px; font-weight: 600; }
+    .nav-item { padding: 12px 14px; margin-bottom: 10px; border-radius: 8px; font-size: 14px; cursor: pointer; transition: all 0.2s; }
+    .nav-item:hover { background: rgba(255,255,255,0.1); }
+    .nav-item.active { background: rgba(215, 239, 232, 0.24); }
+    .main { padding: 32px; }
+    .hero { background: linear-gradient(135deg, #0f766e, #155e75); color: white; border-radius: 16px; padding: 24px; margin-bottom: 24px; }
+    .hero h2 { font-size: 28px; margin-bottom: 12px; }
+    .hero p { font-size: 14px; line-height: 1.6; opacity: 0.9; max-width: 600px; }
+    .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 32px; }
+    .metric { background: white; border: 1px solid #e5ddcf; border-radius: 12px; padding: 20px; }
+    .metric-label { font-size: 12px; color: #666; margin-bottom: 8px; }
+    .metric-value { font-size: 32px; font-weight: 700; color: #333; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="nav">
+      <h3>Support OS</h3>
+      <div class="nav-item active">總覽儀表板</div>
+      <div class="nav-item">待處理案件</div>
+      <div class="nav-item">知識庫</div>
+      <div class="nav-item">自動化規則</div>
+    </aside>
+    <main class="main">
+      <div class="hero">
+        <h2>客服營運總覽</h2>
+        <p>今日請求量、首響時間與升級率都集中在同一個首頁，方便審閱與延伸。</p>
+      </div>
+      <div class="metrics">
+        <div class="metric">
+          <div class="metric-label">今日案件</div>
+          <div class="metric-value">184</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">平均首響時間</div>
+          <div class="metric-value">4m</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">自動解決率</div>
+          <div class="metric-value">62%</div>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>`
     },
     {
       type: ComponentType.ACTION_GROUP,
@@ -69,6 +174,10 @@ const App: React.FC = () => {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [activeSurface, setActiveSurface] = useState<SurfaceComponent | null>(
+    (SAMPLE_MODEL_RESPONSE.data?.components.find(c => c.type === ComponentType.SURFACE) as SurfaceComponent) || null
+  );
+  const [isStagePanelOpen, setIsStagePanelOpen] = useState(false);
 
   // Persistence State
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -124,7 +233,7 @@ const App: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const history = messages.map(m => ({
+      const history = [...messages, userMsg].map(m => ({
         role: m.role,
         parts: [{ text: m.role === 'user' ? m.content! : JSON.stringify(m.data) }]
       }));
@@ -139,6 +248,13 @@ const App: React.FC = () => {
       };
 
       setMessages(prev => [...prev, botMsg]);
+
+      // Extract surface from components and auto-open panel
+      const surface = agUiResponse.components.find(c => c.type === ComponentType.SURFACE) as SurfaceComponent | undefined;
+      if (surface) {
+        setActiveSurface(surface);
+        setIsStagePanelOpen(true);
+      }
     } catch (error) {
       console.error("Failed to generate response", error);
     } finally {
@@ -205,7 +321,7 @@ const App: React.FC = () => {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 w-full max-w-3xl mx-auto p-4 pb-32">
+      <main className="flex-1 w-full max-w-7xl mx-auto p-4 pb-32 relative">
         {messages.length === 0 ? (
           // Greeting Page
           <div className="h-full flex flex-col items-center justify-center py-20 animate-fadeIn">
@@ -233,45 +349,91 @@ const App: React.FC = () => {
             </div>
           </div>
         ) : (
-          // Chat Stream
-          <div className="space-y-8">
-            {messages.map((msg) => (
-              <div key={msg.id} className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-                {/* Avatar */}
-                <div className={`w-10 h-10 rounded-full shrink-0 flex items-center justify-center shadow-sm border ${msg.role === 'user' ? 'bg-white dark:bg-app-card border-slate-200 dark:border-app-border' : `bg-gradient-to-br from-${themeColor}-500 to-${themeColor}-700 border-transparent text-white`}`}>
-                  {msg.role === 'user' ? <User className="w-5 h-5 text-slate-600 dark:text-slate-400" /> : <Sparkles className="w-5 h-5" />}
-                </div>
-
-                {/* Content Bubble */}
-                <div className={`flex flex-col max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                  <div className={`rounded-2xl px-6 py-4 shadow-sm ${msg.role === 'user' ? 'bg-white dark:bg-app-card border border-slate-200 dark:border-app-border text-slate-800 dark:text-slate-200 rounded-tr-sm' : 'bg-white dark:bg-app-card border border-slate-200 dark:border-app-border rounded-tl-sm'} transition-colors duration-300`}>
-                    {msg.role === 'user' ? (
-                      <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
-                    ) : (
-                      msg.data && <AGUIRenderer components={msg.data.components} themeColor={themeColor} />
-                    )}
+          // Chat & Stage Layout
+          <div className="flex gap-4 h-[calc(100vh-280px)]">
+            {/* Chat Panel */}
+            <div className="flex-1 flex flex-col space-y-8 overflow-y-auto pr-4">
+              {messages.map((msg) => (
+                <div key={msg.id} className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                  {/* Avatar */}
+                  <div className={`w-10 h-10 rounded-full shrink-0 flex items-center justify-center shadow-sm border ${msg.role === 'user' ? 'bg-white dark:bg-app-card border-slate-200 dark:border-app-border' : `bg-gradient-to-br from-${themeColor}-500 to-${themeColor}-700 border-transparent text-white`}`}>
+                    {msg.role === 'user' ? <User className="w-5 h-5 text-slate-600 dark:text-slate-400" /> : <Sparkles className="w-5 h-5" />}
                   </div>
 
-                  {/* Suggestions (Only for bot messages) */}
-                  {msg.role === 'model' && msg.data?.suggestions && (
-                    renderSuggestions(msg.data.suggestions)
-                  )}
+                  {/* Content Bubble */}
+                  <div className={`flex flex-col max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                    <div className={`rounded-2xl px-6 py-4 shadow-sm ${msg.role === 'user' ? 'bg-white dark:bg-app-card border border-slate-200 dark:border-app-border text-slate-800 dark:text-slate-200 rounded-tr-sm' : 'bg-white dark:bg-app-card border border-slate-200 dark:border-app-border rounded-tl-sm'} transition-colors duration-300`}>
+                      {msg.role === 'user' ? (
+                        <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                      ) : (
+                        msg.data && <AGUIRenderer components={msg.data.components.filter(c => c.type !== ComponentType.SURFACE)} themeColor={themeColor} />
+                      )}
+                    </div>
 
-                  <span className="text-xs text-slate-400 mt-2 px-1">
-                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
+                    {/* Suggestions (Only for bot messages) */}
+                    {msg.role === 'model' && msg.data?.suggestions && (
+                      renderSuggestions(msg.data.suggestions)
+                    )}
+
+                    <span className="text-xs text-slate-400 mt-2 px-1">
+                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
 
-            {isLoading && <SkeletonLoader themeColor={themeColor} />}
-            <div ref={messagesEndRef} />
+              {isLoading && <SkeletonLoader themeColor={themeColor} />}
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* Stage Panel Toggle */}
+            {activeSurface && (
+              <div className={`transition-all duration-300 ease-in-out overflow-hidden flex flex-col ${isStagePanelOpen ? 'w-[420px]' : 'w-12'}`}>
+                {/* Toggle Button */}
+                <button
+                  onClick={() => setIsStagePanelOpen(!isStagePanelOpen)}
+                  className={`absolute top-4 ${isStagePanelOpen ? 'right-4' : 'right-0'} z-10 p-2 rounded-lg bg-white dark:bg-app-card border border-slate-200 dark:border-app-border hover:bg-slate-50 dark:hover:bg-zinc-700 transition-colors shadow-sm text-slate-600 dark:text-slate-400`}
+                  title={isStagePanelOpen ? 'Collapse' : 'Expand'}
+                >
+                  {isStagePanelOpen ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
+                </button>
+
+                {/* Stage Content */}
+                {isStagePanelOpen && (
+                  <div className="flex-1 min-h-0">
+                    <StagePanel
+                      surface={activeSurface}
+                      onClose={() => setActiveSurface(null)}
+                      themeColor={themeColor}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </main>
 
       {/* Input Area */}
       <div className="sticky bottom-0 bg-white/80 dark:bg-[#1e1e1e]/80 backdrop-blur-md border-t border-slate-200 dark:border-app-border p-4 shadow-lg z-40 transition-colors duration-300">
+        <div className="max-w-3xl mx-auto mb-3">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400 mb-2 px-1">
+            Tool 格式測試（emit_agui_response）
+          </p>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {TOOL_FORMAT_TEST_PROMPTS.map(({ label, prompt }) => (
+              <button
+                key={label}
+                type="button"
+                disabled={isLoading}
+                onClick={() => handleSendMessage(prompt)}
+                className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 disabled:pointer-events-none border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:border-${themeColor}-300 dark:border-app-border dark:bg-zinc-800/80 dark:text-slate-200 dark:hover:bg-zinc-700`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="max-w-3xl mx-auto relative">
           <input
             type="text"

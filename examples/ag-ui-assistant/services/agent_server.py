@@ -20,6 +20,13 @@ class ComponentType(str, Enum):
     STAT_GRID = 'stat_grid'
     CODE_BLOCK = 'code_block'
     ACTION_GROUP = 'action_group'
+    SURFACE = 'surface'
+
+class SurfaceKind(str, Enum):
+    HTML = 'html'
+    SVG = 'svg'
+    MARKDOWN = 'markdown'
+    IFRAME = 'iframe'
 
 class BaseComponent(BaseModel):
     pass
@@ -129,6 +136,16 @@ class ActionGroupComponent(BaseComponent):
     title: Optional[str] = None
     items: List[ActionItem]
 
+class SurfaceComponent(BaseComponent):
+    type: Literal[ComponentType.SURFACE] = ComponentType.SURFACE
+    kind: SurfaceKind
+    html: Optional[str] = None
+    css: Optional[str] = None
+    svg: Optional[str] = None
+    markdown: Optional[str] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+
 # Union type, using discriminator
 ComponentUnion = Annotated[
     Union[
@@ -139,10 +156,19 @@ ComponentUnion = Annotated[
         TableComponent,
         StatGridComponent,
         CodeBlockComponent,
-        ActionGroupComponent
+        ActionGroupComponent,
+        SurfaceComponent
     ],
     Field(discriminator='type')
 ]
+
+class TextContent(BaseModel):
+    answer: str = Field(description="The main response text in Traditional Chinese.")
+    suggestions: List[str] = Field(description="Suggest exactly 0, 1, or 2 follow-up questions.")
+
+class ComponentPlan(BaseModel):
+    components_to_use: List[ComponentType] = Field(description="List of component types that fit the content.")
+    component_descriptions: dict = Field(description="Brief description of what content goes in each component.")
 
 class AGUIResponse(BaseModel):
     components: List[ComponentUnion] = Field(description="A list of UI components to render the answer.")
@@ -150,116 +176,228 @@ class AGUIResponse(BaseModel):
 
 # --- 2. Google ADK Agent Logic ---
 
-def generate_ag_ui_response(prompt: str):
-    # Connect to local llama.cpp server
+def generate_ag_ui_text_content(prompt: str) -> TextContent:
     client = OpenAI(
         base_url="http://localhost:9006/v1",
         api_key="***"
     )
-    # listing models
-    # models = client.models.list()
-    # print(models)
 
     system_instruction = """
-    You are an intelligent assistant communicating via the AG-UI protocol.
+    You are a helpful assistant that provides clear, concise answers in TRADITIONAL CHINESE (繁體中文).
 
-    Your Role:
-    1. Analyze the user's question.
-    2. Structure your answer using the strictly defined JSON schema.
-    3. Language: ALWAYS reply in TRADITIONAL CHINESE (繁體中文).
+    Your task:
+    1. Answer the user's question thoroughly and clearly
+    2. Suggest 0-2 concise follow-up questions based on the answer
 
-    Output Schema Structure:
-    The output MUST be a JSON object with two top-level fields:
-    - "components": A list of UI components.
-    - "suggestions": A list of strings (follow-up questions).
+    Output a JSON with two fields:
+    - "answer": The main response text
+    - "suggestions": Array of 0-2 follow-up questions
+    """
 
-    Available Components (for the "components" list):
+    tool_schema = {
+        "type": "function",
+        "function": {
+            "name": "emit_text_response",
+            "description": "Return text content with suggestions.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "answer": {
+                        "type": "string",
+                        "description": "The main response text"
+                    },
+                    "suggestions": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Follow-up suggestions"
+                    }
+                },
+                "required": ["answer", "suggestions"],
+                "additionalProperties": False
+            }
+        }
+    }
 
-    1. [type="markdown"]
-       - Use for: General text, paragraphs, summaries, and Mermaid diagrams in fenced code blocks.
-       - Fields:
-         - type: "markdown"
-         - content: string (Markdown format)
+    completion = client.chat.completions.create(
+        model="qwen",
+        messages=[
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": prompt},
+        ],
+        max_tokens=4096,
+        temperature=0.7,
+        tools=[tool_schema],
+        tool_choice={
+            "type": "function",
+            "function": {"name": "emit_text_response"}
+        },
+    )
 
-    2. [type="info_card"]
-       - Use for: Important notices, warnings, or summaries.
-       - Fields:
-         - type: "info_card"
-         - title: string
-         - description: string
-         - variant: "info" | "warning" | "success" | "danger"
+    tool_calls = completion.choices[0].message.tool_calls or []
+    if not tool_calls:
+        raise ValueError("Model did not return a tool call for emit_text_response")
 
-    3. [type="data_list"]
-       - Use for: Key-value data.
-       - Fields:
-         - type: "data_list"
-         - title: string (optional)
-         - items: List of objects with "label" and "value" fields.
+    arguments = tool_calls[0].function.arguments or "{}"
+    parsed = TextContent.model_validate(json.loads(arguments))
+    logger.info(f"Stage 1 (Text Content): {parsed}")
+    return parsed
 
-    4. [type="step_process"]
-       - Use for: Step-by-step guides.
-       - Fields:
-         - type: "step_process"
-         - title: string (optional)
-         - steps: List of objects with "title" and "description" fields.
 
-    5. [type="table"]
-       - Use for: Tabular data representation.
-       - Fields:
-         - type: "table"
-         - title: string (optional)
-         - headers: List of strings
-         - rows: List of List of strings
+def suggest_components(text_content: TextContent) -> ComponentPlan:
+    client = OpenAI(
+        base_url="http://localhost:9006/v1",
+        api_key="***"
+    )
 
-    6. [type="stat_grid"]
-       - Use for: KPI summaries and metric snapshots.
-       - Fields:
-         - type: "stat_grid"
-         - title: string (optional)
-         - items: List of objects with "label", "value", and optional "description"
+    component_options = ", ".join([c.value for c in ComponentType])
 
-    7. [type="code_block"]
-       - Use for: Raw code or source snippets such as JSON, HTML, CSS, TypeScript, or Python.
-       - Fields:
-         - type: "code_block"
-         - title: string (optional)
-         - language: string (optional)
-         - content: string
+    system_instruction = f"""
+    You are an expert at selecting appropriate UI components to display content.
 
-    8. [type="action_group"]
-       - Use for: Suggested next steps or structured follow-up options.
-       - Fields:
-         - type: "action_group"
-         - title: string (optional)
-         - items: List of objects with "label", "action", and optional "description"
+    Your task:
+    1. Analyze the provided text content
+    2. Select which component types would best display this content
+    3. Decide what content goes in each component
 
-    IMPORTANT RULES:
-    - DO NOT use any component types other than the 8 listed above.
-    - "suggestions" goes at the ROOT level, NOT inside "components".
-    - Use Mermaid only inside markdown fenced code blocks with language "mermaid".
-    - Do not output raw HTML as a markdown body unless it is intentionally being shown as source code.
-    - Do not answer in free-form prose outside the tool call.
-    - Always call the emit_agui_response tool exactly once.
-    - Keep suggestions short and actionable.
+    Available component types: {component_options}
+
+    Component guidance:
+    - markdown: For general text, explanations, summaries
+    - info_card: For important callouts, warnings, successes
+    - data_list: For key-value pairs or structured data
+    - step_process: For guides or multi-step instructions
+    - table: For tabular/comparison data
+    - stat_grid: For KPIs, metrics, statistics
+    - code_block: For code snippets or technical content
+    - action_group: For suggested actions or next steps
+
+    Output JSON with:
+    - "components_to_use": Array of component type strings to use
+    - "component_descriptions": Object mapping component types to descriptions of their content
+    """
+
+    tool_schema = {
+        "type": "function",
+        "function": {
+            "name": "suggest_ui_components",
+            "description": "Suggest which UI components fit the content.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "components_to_use": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": [c.value for c in ComponentType]},
+                        "description": "Component types to use"
+                    },
+                    "component_descriptions": {
+                        "type": "object",
+                        "description": "Map of component type to description",
+                        "additionalProperties": {"type": "string"}
+                    }
+                },
+                "required": ["components_to_use", "component_descriptions"],
+                "additionalProperties": False
+            }
+        }
+    }
+
+    completion = client.chat.completions.create(
+        model="qwen",
+        messages=[
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": f"Answer text:\n{text_content.answer}"},
+        ],
+        max_tokens=2048,
+        temperature=0.5,
+        tools=[tool_schema],
+        tool_choice={
+            "type": "function",
+            "function": {"name": "suggest_ui_components"}
+        },
+    )
+
+    tool_calls = completion.choices[0].message.tool_calls or []
+    if not tool_calls:
+        raise ValueError("Model did not return a tool call for suggest_ui_components")
+
+    arguments = tool_calls[0].function.arguments or "{}"
+    parsed = ComponentPlan.model_validate(json.loads(arguments))
+    logger.info(f"Stage 2 (Component Plan): {parsed}")
+    return parsed
+
+
+def construct_components(text_content: TextContent, component_plan: ComponentPlan) -> AGUIResponse:
+    client = OpenAI(
+        base_url="http://localhost:9006/v1",
+        api_key="***"
+    )
+
+    components_str = "\n".join([f"- {c}" for c in component_plan.components_to_use])
+    descriptions_str = "\n".join([f"- {k}: {v}" for k, v in component_plan.component_descriptions.items()])
+
+    system_instruction = f"""
+    You are an expert at transforming text content into structured AG-UI components.
+
+    Your task:
+    1. Transform the provided text content into the specified component types
+    2. Fill each component with relevant data from the text
+    3. Return a complete, valid AG-UI response
+
+    Components to create:
+    {components_str}
+
+    Component content guidance:
+    {descriptions_str}
+
+    Component type definitions:
+    1. [type="markdown"] - Use for general text content
+       Fields: type, content (markdown format)
+
+    2. [type="info_card"] - Use for important callouts/warnings/successes
+       Fields: type, title, description, variant (info|warning|success|danger)
+
+    3. [type="data_list"] - Use for key-value data
+       Fields: type, title (optional), items (list of label/value objects)
+
+    4. [type="step_process"] - Use for step-by-step guides
+       Fields: type, title (optional), steps (list of title/description objects)
+
+    5. [type="table"] - Use for tabular data
+       Fields: type, title (optional), headers, rows
+
+    6. [type="stat_grid"] - Use for metrics/KPIs
+       Fields: type, title (optional), items (list of label/value/description objects)
+
+    7. [type="code_block"] - Use for code snippets
+       Fields: type, title (optional), language, content
+
+    8. [type="action_group"] - Use for suggested actions
+       Fields: type, title (optional), items (list of label/action/description objects)
+
+    IMPORTANT:
+    - Return a valid JSON with "components" array and "suggestions" array at root level
+    - suggestions come from the original text_content, not generated here
+    - Use Traditional Chinese (繁體中文) for all content
+    - Do not mix component types - use exactly what was planned
     """
 
     tool_schema = {
         "type": "function",
         "function": {
             "name": "emit_agui_response",
-            "description": "Return a structured AG-UI response that the frontend can render directly.",
+            "description": "Return a structured AG-UI response with components.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "components": {
                         "type": "array",
                         "items": {"type": "object"},
-                        "description": "Structured AG-UI components."
+                        "description": "Structured AG-UI components"
                     },
                     "suggestions": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Short follow-up suggestions."
+                        "description": "Follow-up suggestions"
                     }
                 },
                 "required": ["components", "suggestions"],
@@ -272,10 +410,10 @@ def generate_ag_ui_response(prompt: str):
         model="qwen",
         messages=[
             {"role": "system", "content": system_instruction},
-            {"role": "user", "content": prompt},
+            {"role": "user", "content": f"Text content:\n{text_content.answer}\n\nSuggestions:\n{json.dumps(text_content.suggestions)}"},
         ],
         max_tokens=8192,
-        temperature=0.7,
+        temperature=0.5,
         tools=[tool_schema],
         tool_choice={
             "type": "function",
@@ -289,8 +427,28 @@ def generate_ag_ui_response(prompt: str):
 
     arguments = tool_calls[0].function.arguments or "{}"
     parsed = AGUIResponse.model_validate(json.loads(arguments))
-    logger.info(parsed)
+    logger.info(f"Stage 3 (Final Response): {parsed}")
     return parsed
+
+
+def generate_ag_ui_response(prompt: str) -> AGUIResponse:
+    logger.info(f"=== Starting three-stage response generation ===")
+    logger.info(f"User prompt: {prompt}")
+
+    # Stage 1: Generate text content and suggestions
+    logger.info("Stage 1: Generating text content...")
+    text_content = generate_ag_ui_text_content(prompt)
+
+    # Stage 2: Suggest appropriate components
+    logger.info("Stage 2: Suggesting component types...")
+    component_plan = suggest_components(text_content)
+
+    # Stage 3: Construct final components
+    logger.info("Stage 3: Constructing final response...")
+    response = construct_components(text_content, component_plan)
+
+    logger.info(f"=== Response generation complete ===")
+    return response
 
 
 # --- 3. FastAPI Server Setup ---

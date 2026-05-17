@@ -12,3 +12,4 @@ package-lock.json
 
 dev-*
 .streamlit/
+uploads/

@@ -44,6 +44,9 @@ def init_state():
         "thinking":        False,
         "client":          None,
         "pending_suggestion": "",
+        "chat_expanded":   True,   # 新增：對話欄展開狀態
+        "stage_expanded":  False,  # 新增：展示欄展開狀態（初始折疊）
+        "split_ratio":     25,     # 新增：對話欄占比（25% = 折疊展示欄時的初始狀態）
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -171,11 +174,12 @@ kind 可選：html | svg | markdown | iframe
 若包含 surface component，它會自動顯示在右側展示介面。
 
 ## 規則
-1. 必須只回傳 JSON，不加任何說明文字、markdown 包裝或 ```
-2. 根據問題內容自動選擇最適合的 component 組合
-3. 可以在同一個 components 陣列內混用多種類型
-4. 繁體中文回答
-5. suggestions 提供 2-3 個後續可問的問題
+1. 【最重要】你的回應必須是且只能是一個合法的 JSON 物件，從 `{` 開始，到 `}` 結束。絕對禁止在 JSON 前後加任何文字、說明、markdown 包裝或 ``` 符號。
+2. 即使使用者的輸入不完整、缺乏上下文或無法執行，你仍然必須回傳 JSON，使用 `info_card`（variant: warning）說明問題，並在 `suggestions` 引導使用者提供更多資訊。
+3. 根據問題內容自動選擇最適合的 component 組合
+4. 可以在同一個 components 陣列內混用多種類型
+5. 繁體中文回答
+6. suggestions 提供 2-3 個後續可問的問題
 """).strip()
 
 # ══════════════════════════════════════════════════════════════
@@ -186,8 +190,9 @@ def call_openai(user_text: str, attached_file: dict | None = None) -> dict:
     model  = st.secrets.get("OPENAI_MODEL", DEFAULT_MODEL)
 
     # 對話歷史（只傳 role/content 字串，agui 欄位不送入）
+    # 跳過最後一條 user 訊息，由下方帶附件邏輯的 append 統一處理，避免重複送出
     history: list[dict] = [{"role": "system", "content": AGUI_SYSTEM}]
-    for m in st.session_state.messages:
+    for m in st.session_state.messages[:-1]:
         role    = m["role"]
         content = m.get("content") or ""
         # agent 回傳的是 agui，用摘要文字代替避免 context 爆炸
@@ -221,388 +226,407 @@ def call_openai(user_text: str, attached_file: dict | None = None) -> dict:
             mime = f"image/{'jpeg' if ext in ('jpg','jpeg') else ext}"
             msg_content.append({
                 "type": "image_url",
-                "image_url": {"url": f"data:{mime};base64,{file_b64(p)}", "detail": "high"},
+                "image_url": {"url": f"data:{mime};base64,{file_b64(p)}"},
             })
-
+            msg_content.append({"type": "text", "text": user_text or "請分析這張圖片。"})
         elif is_pdf(ext):
-            try:
-                import pdfplumber
-                pages_text = []
-                with pdfplumber.open(str(p)) as pdf:
-                    for i, page in enumerate(pdf.pages, 1):
-                        t = page.extract_text() or ""
-                        if t.strip():
-                            pages_text.append(f"--- 第 {i} 頁 ---\n{t.strip()}")
-                pdf_text = "\n\n".join(pages_text) or "（PDF 無法萃取文字）"
-                msg_content.append({"type": "text",
-                    "text": f"以下是 PDF《{attached_file['name']}》完整內容：\n\n{pdf_text}"})
-            except ImportError:
-                msg_content.append({"type":"text","text":"[請安裝 pdfplumber]"})
-            except Exception as e:
-                msg_content.append({"type":"text","text":f"[PDF 讀取失敗：{e}]"})
-
+            txt = pdf_extract_text(p)
+            msg_content.append({"type": "text", "text": f"[PDF 內容]\n{txt[:4000]}\n\n{user_text}"})
         elif is_docx(ext):
+            txt = docx_extract_text(p)
+            msg_content.append({"type": "text", "text": f"[DOCX 內容]\n{txt[:4000]}\n\n{user_text}"})
+        elif ext in {"txt", "md"}:
+            # 純文字 / Markdown：直接讀取內容一起送入
             try:
-                from docx import Document
-                doc  = Document(str(p))
-                text = "\n".join(pa.text for pa in doc.paragraphs if pa.text.strip())
-                msg_content.append({"type":"text",
-                    "text":f"以下是 DOCX《{attached_file['name']}》內容：\n\n{text}"})
+                file_text = Path(p).read_text(encoding="utf-8", errors="replace")
             except Exception as e:
-                msg_content.append({"type":"text","text":f"[DOCX 解析失敗：{e}]"})
+                file_text = f"（檔案讀取失敗：{e}）"
+            fname = attached_file.get("name", f"file.{ext}")
+            msg_content.append({
+                "type": "text",
+                "text": f"[{fname} 內容]\n{file_text[:8000]}\n\n{user_text}",
+            })
+        else:
+            # 其他不支援的格式，至少把檔名告知 LLM
+            fname = attached_file.get("name", f"file.{ext}")
+            msg_content.append({
+                "type": "text",
+                "text": f"（使用者上傳了檔案：{fname}，格式暫不支援解析）\n\n{user_text}",
+            })
+    else:
+        msg_content.append({"type": "text", "text": user_text})
 
-    msg_content.append({"type":"text","text":user_text})
-    final_content = msg_content[0]["text"] if (
-        len(msg_content) == 1 and msg_content[0]["type"] == "text"
-    ) else msg_content
+    history.append({"role": "user", "content": msg_content})
 
-    history.append({"role":"user","content":final_content})
+    # API call
+    resp = client.chat.completions.create(model=model, messages=history, temperature=0.7)
+    raw  = resp.choices[0].message.content
 
-    resp = client.chat.completions.create(
-        model=model,
-        max_tokens=4096,
-        messages=history,
-        response_format={"type":"json_object"},
-    )
-    raw = resp.choices[0].message.content or "{}"
+    # 清除 ``` 包裝，並直接擷取第一個 { 到最後一個 } 之間的內容
+    # 這樣無論模型怎麼包裝都能正確提取 JSON
+    raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.MULTILINE)
+    raw = re.sub(r"```\s*$", "", raw, flags=re.MULTILINE)
+    raw = raw.strip()
 
+    # 額外保險：直接切出第一個 { 到最後一個 }
+    start = raw.find("{")
+    end   = raw.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        raw = raw[start:end + 1]
+
+    # 嘗試 parse
     try:
-        return json.loads(raw)
-    except Exception:
-        # fallback：把原始文字包成 markdown component
+        agui_resp = json.loads(raw)
+        # 檢查是否有 surface component
+        has_surface = any(c.get("type") == "surface" for c in agui_resp.get("components", []))
+        # 如果有 surface，自動展開展示欄並調整比例
+        if has_surface:
+            if not st.session_state.stage_expanded:
+                st.session_state.stage_expanded = True
+                st.session_state.split_ratio = 25  # 對話欄 25%, 展示欄 75%
+        return agui_resp
+    except json.JSONDecodeError as e:
         return {
-            "components": [{"type":"markdown","content": raw}],
-            "suggestions": []
+            "components": [
+                {"type": "info_card", "title": "解析錯誤", "description": f"模型回傳非 JSON：\n{raw[:500]}", "variant": "danger"}
+            ],
+            "suggestions": [],
         }
 
-# ══════════════════════════════════════════════════════════════
-# AG-UI Streamlit 渲染器
-# ══════════════════════════════════════════════════════════════
-VARIANT_COLORS = {
-    "info":    ("#1d6fa4", "#eef6ff", "ℹ️"),
-    "warning": ("#b45309", "#fff8eb", "⚠️"),
-    "success": ("#166534", "#f0fdf4", "✅"),
-    "danger":  ("#991b1b", "#fff1f2", "🚨"),
-}
+def pdf_extract_text(path: Path) -> str:
+    try:
+        import pdfplumber
+        with pdfplumber.open(str(path)) as pdf:
+            return "\n\n".join(page.extract_text() or "" for page in pdf.pages[:10])
+    except Exception as e:
+        return f"（PDF 解析失敗：{e}）"
 
-def render_agui_components(components: list, container=None):
-    """把 AGUIComponent list 渲染成 Streamlit widgets。"""
-    ctx = container if container else st
+def docx_extract_text(path: Path) -> str:
+    try:
+        from docx import Document
+        doc = Document(str(path))
+        return "\n\n".join(p.text for p in doc.paragraphs if p.text.strip())
+    except Exception as e:
+        return f"（DOCX 解析失敗：{e}）"
 
+# ══════════════════════════════════════════════════════════════
+# 渲染 AG-UI 元件
+# ══════════════════════════════════════════════════════════════
+def render_agui_components(components: list):
     for comp in components:
         t = comp.get("type", "")
 
-        # ── markdown ──────────────────────────────────────────
+        # ── markdown ──
         if t == "markdown":
-            ctx.markdown(comp.get("content",""))
+            st.markdown(comp.get("content", ""))
 
-        # ── info_card ─────────────────────────────────────────
+        # ── info_card ──
         elif t == "info_card":
-            variant = comp.get("variant","info")
-            color, bg, icon = VARIANT_COLORS.get(variant, VARIANT_COLORS["info"])
-            ctx.markdown(f"""
-<div style="padding:12px 16px;border-radius:10px;background:{bg};
-            border-left:4px solid {color};margin:6px 0;">
-  <div style="font-weight:600;color:{color};margin-bottom:4px;">
-    {icon} {comp.get('title','')}
-  </div>
-  <div style="font-size:13.5px;color:#374151;line-height:1.6;">
-    {comp.get('description','')}
-  </div>
+            variant = comp.get("variant", "info")
+            color_map = {"info":"#3498db","warning":"#f39c12","success":"#27ae60","danger":"#e74c3c"}
+            bg = color_map.get(variant, "#3498db")
+            st.markdown(f"""
+<div style="border-left:4px solid {bg}; padding:12px; background:#1e1e1e; margin:8px 0; border-radius:4px;">
+  <div style="font-weight:600; font-size:1em; color:{bg};">{comp.get('title','')}</div>
+  <div style="margin-top:6px; color:#ddd;">{comp.get('description','')}</div>
 </div>""", unsafe_allow_html=True)
 
-        # ── data_list ─────────────────────────────────────────
+        # ── data_list ──
         elif t == "data_list":
             if comp.get("title"):
-                ctx.markdown(f"**{comp['title']}**")
-            rows_html = ""
+                st.markdown(f"**{comp['title']}**")
             for item in comp.get("items", []):
-                rows_html += (
-                    '<div style="display:grid;grid-template-columns:1fr 1.4fr;gap:8px;' +
-                    'padding:8px 12px;border-bottom:1px solid #e0d9cf;background:#ffffff;">' +
-                    f'<span style="font-size:12px;color:#374151;font-weight:600;">{item.get("label","")}</span>' +
-                    f'<span style="font-size:13px;color:#111827;font-weight:400;">{item.get("value","")}</span>' +
-                    '</div>'
-                )
-            ctx.markdown(
-                '<div style="border:1px solid #d5cfc6;border-radius:10px;overflow:hidden;' +
-                'margin:6px 0;background:#ffffff;">' + rows_html + '</div>',
-                unsafe_allow_html=True,
-            )
+                lbl = item.get("label","")
+                val = item.get("value","")
+                st.markdown(f"• **{lbl}**: {val}")
 
-        # ── step_process ──────────────────────────────────────
+        # ── step_process ──
         elif t == "step_process":
-            if comp.get("title"):
-                ctx.markdown(f"**{comp['title']}**")
-            steps = comp.get("steps", [])
-            steps_html = ""
-            for i, step in enumerate(steps, 1):
-                connector = "" if i == len(steps) else (
-                    '<div style="width:2px;height:20px;background:#d1d5db;'
-                    'margin:2px 0 2px 15px;"></div>'
-                )
-                steps_html += f"""
-<div style="display:flex;gap:12px;align-items:flex-start;">
-  <div style="width:30px;height:30px;border-radius:50%;background:#0f766e;
-              color:white;display:flex;align-items:center;justify-content:center;
-              font-size:12px;font-weight:700;flex-shrink:0;">{i}</div>
-  <div style="padding-top:4px;">
-    <div style="font-size:13.5px;font-weight:600;color:#1a2424;">{step.get('title','')}</div>
-    <div style="font-size:12.5px;color:#6b7280;margin-top:2px;line-height:1.5;">
-      {step.get('description','')}
-    </div>
-  </div>
-</div>
-{connector}"""
-            ctx.markdown(f"""
-<div style="padding:12px;border:1px solid #e5ddd0;border-radius:10px;
-            background:#fdfcf9;margin:6px 0;">
-  {steps_html}
-</div>""", unsafe_allow_html=True)
+            st.markdown(f"### {comp.get('title','流程')}")
+            for i, step in enumerate(comp.get("steps",[]), 1):
+                title = step.get("title","")
+                desc  = step.get("description","")
+                st.markdown(f"**{i}. {title}**")
+                if desc:
+                    st.markdown(f"   {desc}")
 
-        # ── table ─────────────────────────────────────────────
+        # ── table ──
         elif t == "table":
             if comp.get("title"):
-                ctx.markdown(f"**{comp['title']}**")
+                st.markdown(f"**{comp['title']}**")
             headers = comp.get("headers", [])
             rows    = comp.get("rows", [])
-            if headers:
-                header_html = "".join(
-                    '<th style="padding:9px 12px;background:#f0ece5;'
-                    'font-size:11px;font-weight:700;color:#374151;'
-                    'text-transform:uppercase;letter-spacing:.05em;'
-                    f'text-align:left;border-bottom:2px solid #d5cfc6;">{h}</th>'
-                    for h in headers
-                )
-                rows_html = ""
-                for ri, row in enumerate(rows):
-                    bg = "#ffffff" if ri % 2 == 0 else "#f7f4ef"
-                    cells = "".join(
-                        '<td style="padding:9px 12px;font-size:13px;' +
-                        f'color:#111827;border-bottom:1px solid #e8e0d4;">{c}</td>'
-                        for c in row
-                    )
-                    rows_html += f'<tr style="background:{bg};">{cells}</tr>'
-                ctx.markdown(f"""
-<div style="overflow:auto;border:1px solid #e5ddd0;border-radius:10px;
-            overflow:hidden;margin:6px 0;">
-  <table style="width:100%;border-collapse:collapse;">
-    <thead><tr>{header_html}</tr></thead>
-    <tbody>{rows_html}</tbody>
-  </table>
-</div>""", unsafe_allow_html=True)
+            if headers and rows:
+                import pandas as pd
+                df = pd.DataFrame(rows, columns=headers)
+                st.dataframe(df, use_container_width=True)
 
-        # ── stat_grid ─────────────────────────────────────────
+        # ── stat_grid ──
         elif t == "stat_grid":
             if comp.get("title"):
-                ctx.markdown(f"**{comp['title']}**")
+                st.markdown(f"**{comp['title']}**")
             items = comp.get("items", [])
-            cols  = ctx.columns(min(len(items), 3))
-            for i, item in enumerate(items):
-                with cols[i % len(cols)]:
-                    desc = f"<div style='font-size:11px;color:#6b7280;margin-top:3px;'>{item.get('description','')}</div>" if item.get("description") else ""
-                    st.markdown(f"""
-<div style="padding:14px 16px;border:1px solid #e5ddd0;border-radius:10px;
-            background:white;margin:4px 0;">
-  <div style="font-size:11px;color:#374151;font-weight:600;margin-bottom:4px;">
-    {item.get('label','')}
-  </div>
-  <div style="font-size:22px;font-weight:700;color:#111827;letter-spacing:-.02em;">
-    {item.get('value','')}
-  </div>
-  {desc}
-</div>""", unsafe_allow_html=True)
+            cols  = st.columns(len(items))
+            for ci, item in enumerate(items):
+                with cols[ci]:
+                    st.metric(label=item.get("label",""), value=item.get("value",""),
+                              help=item.get("description"))
 
-        # ── code_block ────────────────────────────────────────
+        # ── code_block ──
         elif t == "code_block":
             if comp.get("title"):
-                ctx.markdown(f"**{comp['title']}**")
-            lang = comp.get("language","text")
-            ctx.code(comp.get("content",""), language=lang)
+                st.markdown(f"**{comp['title']}**")
+            lang = comp.get("language", "python")
+            code = comp.get("content", "")
+            st.code(code, language=lang)
 
-        # ── action_group ──────────────────────────────────────
+        # ── action_group ──
         elif t == "action_group":
-            if comp.get("title"):
-                ctx.markdown(f"**{comp['title']}**")
+            st.markdown(f"**{comp.get('title','建議動作')}**")
             for item in comp.get("items", []):
-                desc = f" — {item['description']}" if item.get("description") else ""
-                ctx.markdown(f"""
-<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;
-            border:1px solid #e5ddd0;border-radius:8px;margin:4px 0;
-            background:#fdfcf9;cursor:pointer;">
-  <span style="font-size:13px;font-weight:500;color:#0f766e;">
-    › {item.get('label','')}
-  </span>
-  <span style="font-size:12px;color:#6b7280;">{desc}</span>
-</div>""", unsafe_allow_html=True)
+                lbl = item.get("label", "")
+                act = item.get("action", "")
+                desc = item.get("description", "")
+                btn_text = f"{lbl}"
+                if desc:
+                    btn_text += f" - {desc}"
+                if st.button(btn_text, key=f"act_{act}_{id(comp)}"):
+                    st.session_state.pending_suggestion = lbl
+                    st.rerun()
 
-        # ── surface (渲染到右側展示介面) ───────────────────────
+        # ── surface ──
         elif t == "surface":
-            kind  = comp.get("kind","html")
-            title = comp.get("title","generated-surface")
-            fname = re.sub(r"[^\w\-.]", "_", title)
-
+            kind  = comp.get("kind", "html")
+            title = comp.get("title", "surface")
             if kind == "html":
-                html_src = comp.get("html","")
-                css_src  = comp.get("css","")
-                if css_src:
-                    html_src = f"<style>{css_src}</style>\n{html_src}"
-                if not fname.endswith(".html"):
-                    fname += ".html"
-                gen = save_generated(fname, html_src.encode(), "html")
-                st.session_state.generated_files.append(gen)
-                st.session_state.active_file = gen["id"]
-                ctx.markdown(f"""
-<div style="padding:10px 14px;border-radius:10px;background:#f0fdf4;
-            border-left:4px solid #166534;margin:6px 0;font-size:13px;">
-  ✅ 已生成 <strong>{fname}</strong>，請查看右側展示介面。
-</div>""", unsafe_allow_html=True)
-
+                html_src = comp.get("html", "")
+                css      = comp.get("css", "")
+                full     = f"<style>{css}</style>{html_src}"
+                fname    = f"{title.replace(' ','_')}.html"
+                # 用 prompt（title）去重，避免每次 rerun 重複寫入
+                existing = next(
+                    (f for f in st.session_state.generated_files
+                     if f.get("prompt") == title and f["ext"] == "html"),
+                    None,
+                )
+                if existing is None:
+                    meta = save_generated(fname, full.encode("utf-8"), "html", prompt=title)
+                    st.session_state.generated_files.append(meta)
+                    st.session_state.active_file = meta["id"]
+                st.success(f"✅ 已產生 surface：{title}，請至右側展示介面查看。")
             elif kind == "svg":
-                svg_src = comp.get("svg","")
-                ctx.markdown(svg_src, unsafe_allow_html=True)
+                svg_src = comp.get("svg", "")
+                fname   = f"{title.replace(' ','_')}.svg"
+                existing = next(
+                    (f for f in st.session_state.generated_files
+                     if f.get("prompt") == title and f["ext"] == "svg"),
+                    None,
+                )
+                if existing is None:
+                    meta = save_generated(fname, svg_src.encode("utf-8"), "svg", prompt=title)
+                    st.session_state.generated_files.append(meta)
+                    st.session_state.active_file = meta["id"]
+                st.success(f"✅ 已產生 SVG：{title}，請至右側展示介面查看。")
+            else:
+                st.info(f"surface kind={kind} 暫不支援")
 
-            elif kind == "markdown":
-                md_src = comp.get("markdown","")
-                if not fname.endswith(".md"):
-                    fname += ".md"
-                gen = save_generated(fname, md_src.encode(), "md")
-                st.session_state.generated_files.append(gen)
-                st.session_state.active_file = gen["id"]
-                ctx.markdown(md_src)
-
+        # ── 未知類型 ──
         else:
-            # 未知 component 用 JSON 顯示
-            ctx.json(comp)
+            st.warning(f"未知 component type: {t}")
 
 # ══════════════════════════════════════════════════════════════
-# CSS
+# 自定義 CSS（去除 header）
 # ══════════════════════════════════════════════════════════════
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap');
-html, body, [class*="css"] { font-family: 'DM Sans', sans-serif !important; }
-#MainMenu, footer, header { visibility: hidden; }
-.block-container { padding: 0 !important; max-width: 100% !important; }
-section[data-testid="stSidebar"] { display: none; }
-
-.acr-topbar {
-  display:flex; align-items:center; padding:12px 22px;
-  background:rgba(255,252,245,.96); border-bottom:1px solid #ddd4c3;
+/* 隱藏 Streamlit header */
+header[data-testid="stHeader"] {
+    display: none !important;
 }
-.acr-badge {
-  width:36px; height:36px; border-radius:11px;
-  background:linear-gradient(135deg,#0d5fa0,#0a4880);
-  color:white; display:grid; place-items:center;
-  font-weight:700; font-size:14px; margin-right:12px;
-  box-shadow:0 4px 12px rgba(13,95,160,.3);
+
+/* 調整主容器頂部間距 */
+.main .block-container {
+    padding-top: 1rem !important;
 }
-.acr-title { font-size:15px; font-weight:600; color:#1a2424; }
-.acr-sub   { font-size:11px; color:#7a8b8a; }
 
-.panel-hdr { padding:12px 0 8px; border-bottom:1px solid rgba(221,212,195,.5); margin-bottom:10px; }
-.panel-hdr h3 { font-size:11px; font-weight:600; text-transform:uppercase;
-                letter-spacing:.07em; color:#7a8b8a; margin:0; }
+/* Panel 樣式 */
+.panel-hdr {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 12px 16px;
+    border-radius: 8px 8px 0 0;
+    font-weight: 600;
+    margin-bottom: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
 
-/* ── 訊息 ── */
-.msg-meta { font-size:10px; font-weight:700; text-transform:uppercase;
-            letter-spacing:.08em; color:#7a8b8a; padding:0 4px; margin-bottom:4px; }
-.msg-meta.user-meta { text-align:right; }
+.panel-hdr h3 {
+    margin: 0;
+    font-size: 1.1em;
+}
+
+/* 訊息氣泡 */
+.msg-meta {
+    font-size: 0.85em;
+    color: #888;
+    margin-bottom: 4px;
+}
 
 .msg-user {
-  background:#1a2424; color:rgba(255,255,255,.92);
-  border-radius:16px 16px 4px 16px;
-  padding:11px 15px; font-size:13.5px; line-height:1.65;
-  box-shadow:0 2px 8px rgba(40,30,15,.07);
-  margin-left:20px; margin-bottom:14px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 12px 16px;
+    border-radius: 18px;
+    margin-bottom: 12px;
+    max-width: 80%;
 }
 
 .msg-agent {
-  background:rgba(255,253,248,.97); color:#1a2424;
-  border:1px solid #ddd4c3;
-  border-radius:16px 16px 16px 4px;
-  padding:14px 16px; margin-right:20px; margin-bottom:14px;
-  box-shadow:0 2px 8px rgba(40,30,15,.05);
+    background: #2a2a2a;
+    color: #eee;
+    padding: 14px 18px;
+    border-radius: 18px;
+    margin-bottom: 12px;
+    border: 1px solid #444;
 }
 
-/* ── 思考狀態（在 agent 氣泡內） ── */
-.thinking-bubble {
-  background:rgba(255,253,248,.97); color:#7a8b8a;
-  border:1px dashed #ddd4c3;
-  border-radius:16px 16px 16px 4px;
-  padding:12px 16px; margin-right:20px; margin-bottom:14px;
-  font-size:13px; display:flex; align-items:center; gap:10px;
-}
-@keyframes pulse { 0%,100%{opacity:.4} 50%{opacity:1} }
-.thinking-dot {
-  width:6px; height:6px; border-radius:50%; background:#0f766e;
-  animation:pulse 1.4s ease infinite;
-}
-.thinking-dot:nth-child(2){animation-delay:.2s}
-.thinking-dot:nth-child(3){animation-delay:.4s}
-
-/* ── file chip ── */
 .file-chip {
-  display:inline-flex; align-items:center; gap:6px;
-  padding:5px 10px; border-radius:8px;
-  background:#f4efe6; border:1px solid #ddd4c3;
-  font-size:12px; color:#3d4f4e; margin-top:8px;
+    display: inline-flex;
+    align-items: center;
+    background: rgba(255,255,255,0.2);
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.9em;
+    margin-top: 6px;
 }
 
-/* ── suggestions ── */
-.suggestion-row { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
-.suggestion-chip {
-  padding:5px 10px; border-radius:999px;
-  border:1px solid #d1cbbf; background:#f9f6f1;
-  font-size:12px; color:#3d4f4e; cursor:pointer;
-  transition:all .15s;
+.thinking-bubble {
+    background: #2a2a2a;
+    padding: 12px 18px;
+    border-radius: 18px;
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid #444;
+    margin-bottom: 12px;
 }
-.suggestion-chip:hover { background:#e8f5f2; border-color:#0f766e; color:#0f766e; }
 
-.pdf-frame { border:none; border-radius:14px; width:100%; }
+.thinking-dot {
+    width: 8px;
+    height: 8px;
+    background: #667eea;
+    border-radius: 50%;
+    margin: 0 3px;
+    animation: thinking 1.4s infinite ease-in-out both;
+}
+
+.thinking-dot:nth-child(1) { animation-delay: -0.32s; }
+.thinking-dot:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes thinking {
+  0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+.pdf-frame {
+    border: 1px solid #444;
+    border-radius: 8px;
+}
+
+/* 折疊按鈕樣式 */
+.toggle-btn {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: white;
+    padding: 4px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: all 0.2s;
+}
+
+.toggle-btn:hover {
+    background: rgba(255,255,255,0.2);
+}
+
+/* 拖動手柄樣式 */
+.resize-handle {
+    width: 8px;
+    background: #444;
+    cursor: col-resize;
+    position: relative;
+    transition: background 0.2s;
+}
+
+.resize-handle:hover {
+    background: #667eea;
+}
+
+.resize-handle::before {
+    content: '⋮';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #888;
+    font-size: 1.2em;
+}
 </style>
 """, unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════════════════════
-# TOPBAR
-# ══════════════════════════════════════════════════════════════
-model_display = st.secrets.get("OPENAI_MODEL", DEFAULT_MODEL)
-st.markdown(f"""
-<div class="acr-topbar">
-  <div class="acr-badge">AI</div>
-  <div>
-    <div class="acr-title">Agent Conversation Renderer</div>
-    <div class="acr-sub">OpenAI · {model_display} · AG-UI Protocol</div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 主版面配置
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-# ══════════════════════════════════════════════════════════════
-# 雙欄佈局
-# ══════════════════════════════════════════════════════════════
-chat_col, stage_col = st.columns([4, 6], gap="small")
+# 根據展開狀態計算列寬比例
+if not st.session_state.chat_expanded and not st.session_state.stage_expanded:
+    # 兩邊都折疊：顯示小寬度（各占 50%）
+    col_widths = [1, 1]
+elif not st.session_state.chat_expanded:
+    # 對話欄折疊，展示欄展開
+    col_widths = [1, 9]
+elif not st.session_state.stage_expanded:
+    # 對話欄展開，展示欄折疊
+    col_widths = [9, 1]
+else:
+    # 兩邊都展開：使用自定義比例
+    chat_ratio = st.session_state.split_ratio
+    stage_ratio = 100 - chat_ratio
+    col_widths = [chat_ratio, stage_ratio]
+
+chat_col, stage_col = st.columns(col_widths, gap="small")
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 左欄：對話介面
+# 左欄：對話流
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 with chat_col:
-    st.markdown('<div class="panel-hdr"><h3>對話流</h3></div>', unsafe_allow_html=True)
+    # Panel Header with Toggle Button
+    toggle_label = "◀" if st.session_state.chat_expanded else "▶"
+    
+    col_title, col_btn = st.columns([4, 1])
+    with col_title:
+        st.markdown('<div class="panel-hdr"><h3>對話流</h3></div>', unsafe_allow_html=True)
+    with col_btn:
+        if st.button(toggle_label, key="chat_toggle", help="展開/折疊對話欄"):
+            st.session_state.chat_expanded = not st.session_state.chat_expanded
+            st.rerun()
 
-    msg_container = st.container(height=540)
+    if st.session_state.chat_expanded:
+        # ── 對話欄內容 ──
+        st.markdown('<div class="chat-container">', unsafe_allow_html=True)
 
-    with msg_container:
-        for m in st.session_state.messages:
-            role = m["role"]
-
-            if role == "user":
-                # user 氣泡
-                st.markdown('<div class="msg-meta user-meta">User</div>', unsafe_allow_html=True)
+        # ── 訊息串 ──
+        for i, m in enumerate(st.session_state.messages):
+            if m["role"] == "user":
+                st.markdown('<div class="msg-meta">User</div>', unsafe_allow_html=True)
+                content_text = m.get("content", "")
+                chip = m.get("file_chip")
                 chip_html = ""
-                if m.get("file_chip"):
-                    fc = m["file_chip"]
-                    chip_html = f'<div class="file-chip">{file_icon(fc["ext"])} {fc["name"]}</div>'
+                if chip:
+                    chip_html = f'<div class="file-chip">{file_icon(chip["ext"])} {chip["name"]}</div>'
                 st.markdown(
-                    f'<div class="msg-user">{m.get("content","")}{chip_html}</div>',
+                    f'<div class="msg-user">{content_text}{chip_html}</div>',
                     unsafe_allow_html=True,
                 )
 
@@ -643,46 +667,48 @@ with chat_col:
   <span style="margin-left:4px;">思考中…</span>
 </div>""", unsafe_allow_html=True)
 
-    # ── Composer ──
-    with st.form("composer", clear_on_submit=False):
-        attached = st.file_uploader(
-            "附加檔案",
-            type=["pdf","docx","doc","png","jpg","jpeg","gif","webp","txt","md"],
-            label_visibility="collapsed",
-        )
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # ── Composer ──
+        # pending_suggestion 在 form 外先讀取，避免 clear_on_submit 清掉它
         prefill = st.session_state.get("pending_suggestion", "")
-        user_input = st.text_input(
-            "輸入指令", value=prefill,
-            placeholder="輸入指令，或上傳檔案後送出…",
-            label_visibility="collapsed",
-        )
-        submitted = st.form_submit_button("⬆ Send", use_container_width=True)
+        with st.form("composer", clear_on_submit=True):
+            attached = st.file_uploader(
+                "附加檔案",
+                type=["pdf","docx","doc","png","jpg","jpeg","gif","webp","txt","md"],
+                label_visibility="collapsed",
+            )
+            user_input = st.text_input(
+                "輸入指令", value=prefill,
+                placeholder="輸入指令，或上傳檔案後送出…",
+                label_visibility="collapsed",
+            )
+            submitted = st.form_submit_button("⬆ Send", use_container_width=True)
 
-    # pending_suggestion 在 submitted 後才清，不在渲染階段清
-    if submitted and (user_input.strip() or attached):
-        final_text = user_input.strip()
-        st.session_state.pending_suggestion = ""   # 送出後才清
+        if submitted and (user_input.strip() or attached):
+            final_text = user_input.strip()
+            st.session_state.pending_suggestion = ""   # 送出後才清
 
-        # 1. 儲存附件
-        attached_meta = None
-        if attached:
-            attached_meta = save_upload(attached)
-            if not any(f["id"] == attached_meta["id"] for f in st.session_state.uploaded_files):
-                st.session_state.uploaded_files.append(attached_meta)
-            st.session_state.active_file = attached_meta["id"]
+            # 1. 儲存附件
+            attached_meta = None
+            if attached:
+                attached_meta = save_upload(attached)
+                if not any(f["id"] == attached_meta["id"] for f in st.session_state.uploaded_files):
+                    st.session_state.uploaded_files.append(attached_meta)
+                st.session_state.active_file = attached_meta["id"]
 
-        chip = {"name": attached_meta["name"], "ext": attached_meta["ext"]} if attached_meta else None
+            chip = {"name": attached_meta["name"], "ext": attached_meta["ext"]} if attached_meta else None
 
-        # 2. 加入 user 訊息
-        st.session_state.messages.append({
-            "role": "user",
-            "content": final_text or f"（已上傳 {attached.name}）",
-            "file_chip": chip,
-        })
+            # 2. 加入 user 訊息
+            st.session_state.messages.append({
+                "role": "user",
+                "content": final_text or f"（已上傳 {attached.name}）",
+                "file_chip": chip,
+            })
 
-        # 3. 開啟 thinking 狀態 → rerun 讓氣泡出現
-        st.session_state.thinking = True
-        st.rerun()
+            # 3. 開啟 thinking 狀態 → rerun 讓氣泡出現
+            st.session_state.thinking = True
+            st.rerun()
 
 # ── 在 thinking 狀態下執行 API 呼叫 ──
 if st.session_state.thinking:
@@ -715,113 +741,142 @@ if st.session_state.thinking:
 # 右欄：展示介面
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 with stage_col:
-    st.markdown('<div class="panel-hdr"><h3>展示介面</h3></div>', unsafe_allow_html=True)
+    # Panel Header with Toggle Button and Resize Slider
+    toggle_label = "▶" if st.session_state.stage_expanded else "◀"
+    
+    col_title2, col_btn2 = st.columns([4, 1])
+    with col_title2:
+        st.markdown('<div class="panel-hdr"><h3>展示介面</h3></div>', unsafe_allow_html=True)
+    with col_btn2:
+        if st.button(toggle_label, key="stage_toggle", help="展開/折疊展示欄"):
+            st.session_state.stage_expanded = not st.session_state.stage_expanded
+            st.rerun()
 
-    sb_col, main_col = st.columns([2, 5], gap="small")
-
-    # ── Sidebar ──
-    with sb_col:
-        st.markdown("**上傳的檔案**")
-        for f in st.session_state.uploaded_files:
-            is_active = st.session_state.active_file == f["id"]
-            if st.button(f"{file_icon(f['ext'])} {f['name']}", key=f"ub_{f['id']}",
-                         use_container_width=True,
-                         type="primary" if is_active else "secondary"):
-                st.session_state.active_file = f["id"]
-                st.rerun()
-
-        new_file = st.file_uploader(
-            "新增",
-            type=["pdf","docx","doc","png","jpg","jpeg","gif","webp","txt","md"],
-            key="sb_upload", label_visibility="collapsed",
-        )
-        if new_file:
-            meta = save_upload(new_file)
-            if not any(f["name"] == meta["name"] for f in st.session_state.uploaded_files):
-                st.session_state.uploaded_files.append(meta)
-                st.session_state.active_file = meta["id"]
-                st.rerun()
-
-        st.divider()
-
-        st.markdown("**模型產出**")
-        for f in st.session_state.generated_files:
-            is_active = st.session_state.active_file == f["id"]
-            if st.button(f"{file_icon(f['ext'])} {f['name']}", key=f"gb_{f['id']}",
-                         use_container_width=True,
-                         type="primary" if is_active else "secondary"):
-                st.session_state.active_file = f["id"]
-                st.rerun()
-
-    # ── Main Viewer ──
-    with main_col:
-        active = find_file(st.session_state.active_file) if st.session_state.active_file else None
-
-        if active is None:
-            st.info("從左側選擇檔案，或透過對話要求 Agent 生成內容。")
-        else:
-            ext  = active["ext"].lower()
-            path = Path(active["path"])
-            src  = active["source"]
-
-            badge = "🔵 上傳" if src == "upload" else "🟢 模型產出"
-            st.markdown(
-                f"**{file_icon(ext)} {active['name']}** &nbsp; `{badge}` &nbsp; `{active['ts']}`",
-                unsafe_allow_html=True,
+    if st.session_state.stage_expanded:
+        # 比例調整滑桿（只有當兩邊都展開時才顯示）
+        if st.session_state.chat_expanded:
+            st.markdown("##### 調整畫面比例")
+            new_ratio = st.slider(
+                "對話欄占比 (%)",
+                min_value=10,
+                max_value=90,
+                value=st.session_state.split_ratio,
+                step=5,
+                key="ratio_slider",
+                label_visibility="collapsed"
             )
+            if new_ratio != st.session_state.split_ratio:
+                st.session_state.split_ratio = new_ratio
+                st.rerun()
 
-            tab_preview, tab_source, tab_json = st.tabs(["👁 預覽","📄 原始碼","📦 JSON"])
+        sb_col, main_col = st.columns([2, 5], gap="small")
 
-            with tab_preview:
-                if is_image(ext):
-                    st.image(str(path), use_container_width=True)
-                elif is_pdf(ext):
-                    b64 = file_b64(path)
-                    st.markdown(
-                        f'<iframe src="data:application/pdf;base64,{b64}" '
-                        f'width="100%" height="560" class="pdf-frame"></iframe>',
-                        unsafe_allow_html=True,
-                    )
-                elif is_docx(ext):
-                    try:
-                        from docx import Document
-                        doc  = Document(str(path))
-                        text = "\n\n".join(p.text for p in doc.paragraphs if p.text.strip())
-                        st.markdown(text or "_（文件內容為空）_")
-                    except Exception as e:
-                        st.error(f"無法解析 DOCX：{e}")
-                elif ext == "html":
-                    html_src = path.read_text(encoding="utf-8", errors="replace")
-                    st.components.v1.html(html_src, height=560, scrolling=True)
-                elif ext in {"md","txt"}:
-                    st.markdown(path.read_text(encoding="utf-8", errors="replace"))
-                else:
-                    st.info("此檔案類型暫不支援預覽，請下載後開啟。")
+        # ── Sidebar ──
+        with sb_col:
+            st.markdown("**上傳的檔案**")
+            for f in st.session_state.uploaded_files:
+                is_active = st.session_state.active_file == f["id"]
+                if st.button(f"{file_icon(f['ext'])} {f['name']}", key=f"ub_{f['id']}",
+                             use_container_width=True,
+                             type="primary" if is_active else "secondary"):
+                    st.session_state.active_file = f["id"]
+                    st.rerun()
 
-                st.download_button(
-                    f"⬇ 下載 {active['name']}",
-                    data=path.read_bytes(),
-                    file_name=active["name"],
-                    mime="application/octet-stream",
-                    use_container_width=True,
+            new_file = st.file_uploader(
+                "新增",
+                type=["pdf","docx","doc","png","jpg","jpeg","gif","webp","txt","md"],
+                key="sb_upload", label_visibility="collapsed",
+            )
+            if new_file:
+                meta = save_upload(new_file)
+                if not any(f["name"] == meta["name"] for f in st.session_state.uploaded_files):
+                    st.session_state.uploaded_files.append(meta)
+                    st.session_state.active_file = meta["id"]
+                    st.rerun()
+
+            st.divider()
+
+            st.markdown("**模型產出**")
+            for f in st.session_state.generated_files:
+                is_active = st.session_state.active_file == f["id"]
+                if st.button(f"{file_icon(f['ext'])} {f['name']}", key=f"gb_{f['id']}",
+                             use_container_width=True,
+                             type="primary" if is_active else "secondary"):
+                    st.session_state.active_file = f["id"]
+                    st.rerun()
+
+        # ── Main Viewer ──
+        with main_col:
+            active = find_file(st.session_state.active_file) if st.session_state.active_file else None
+
+            if active is None:
+                st.info("從左側選擇檔案，或透過對話要求 Agent 生成內容。")
+            else:
+                ext  = active["ext"].lower()
+                path = Path(active["path"])
+                src  = active["source"]
+
+                badge = "🔵 上傳" if src == "upload" else "🟢 模型產出"
+                st.markdown(
+                    f"**{file_icon(ext)} {active['name']}** &nbsp; `{badge}` &nbsp; `{active['ts']}`",
+                    unsafe_allow_html=True,
                 )
 
-            with tab_source:
-                if ext in {"html","txt","md","css","js","json","svg"}:
-                    src_text = path.read_text(encoding="utf-8", errors="replace")
-                    st.code(src_text, language=ext if ext != "md" else "markdown", line_numbers=True)
-                else:
-                    st.info("此類型不支援原始碼檢視。")
+                tab_preview, tab_source, tab_json = st.tabs(["👁 預覽","📄 原始碼","📦 JSON"])
 
-            with tab_json:
-                st.json({
-                    "surface": {
-                        "id":         active["id"],
-                        "filename":   active["name"],
-                        "ext":        active["ext"],
-                        "source":     active["source"],
-                        "ts":         active["ts"],
-                        "path":       str(active["path"]),
-                        "size_bytes": path.stat().st_size,
-                    }
-                })
+                with tab_preview:
+                    if is_image(ext):
+                        st.image(str(path), use_container_width=True)
+                    elif is_pdf(ext):
+                        b64 = file_b64(path)
+                        st.markdown(
+                            f'<iframe src="data:application/pdf;base64,{b64}" '
+                            f'width="100%" height="560" class="pdf-frame"></iframe>',
+                            unsafe_allow_html=True,
+                        )
+                    elif is_docx(ext):
+                        try:
+                            from docx import Document
+                            doc  = Document(str(path))
+                            text = "\n\n".join(p.text for p in doc.paragraphs if p.text.strip())
+                            st.markdown(text or "_（文件內容為空）_")
+                        except Exception as e:
+                            st.error(f"無法解析 DOCX：{e}")
+                    elif ext == "html":
+                        html_src = path.read_text(encoding="utf-8", errors="replace")
+                        st.components.v1.html(html_src, height=560, scrolling=True)
+                    elif ext in {"md","txt"}:
+                        st.markdown(path.read_text(encoding="utf-8", errors="replace"))
+                    else:
+                        st.info("此檔案類型暫不支援預覽，請下載後開啟。")
+
+                    st.download_button(
+                        f"⬇ 下載 {active['name']}",
+                        data=path.read_bytes(),
+                        file_name=active["name"],
+                        mime="application/octet-stream",
+                        use_container_width=True,
+                    )
+
+                with tab_source:
+                    if ext in {"html","txt","md","css","js","json","svg"}:
+                        src_text = path.read_text(encoding="utf-8", errors="replace")
+                        st.code(src_text, language=ext if ext != "md" else "markdown", line_numbers=True)
+                    else:
+                        st.info("此類型不支援原始碼檢視。")
+
+                with tab_json:
+                    st.json({
+                        "surface": {
+                            "id":         active["id"],
+                            "filename":   active["name"],
+                            "ext":        active["ext"],
+                            "source":     active["source"],
+                            "ts":         active["ts"],
+                            "path":       str(active["path"]),
+                            "size_bytes": path.stat().st_size,
+                        }
+                    })
+    else:
+        # 展示欄折疊時顯示提示
+        st.info("展示欄已折疊，點擊上方按鈕展開")

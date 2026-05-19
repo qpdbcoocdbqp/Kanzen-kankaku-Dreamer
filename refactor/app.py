@@ -183,39 +183,33 @@ kind 可選：html | svg | markdown | iframe
 """).strip()
 
 # ══════════════════════════════════════════════════════════════
-# 呼叫 OpenAI → AGUIResponse
+# 三階段 OpenAI 調用函數
 # ══════════════════════════════════════════════════════════════
-def call_openai(user_text: str, attached_file: dict | None = None) -> dict:
+
+def call_openai_stage1_text_content(user_text: str, attached_file: dict | None = None) -> dict:
+    """Stage 1: 生成純文本內容和建議"""
     client = get_client()
     model  = st.secrets.get("OPENAI_MODEL", DEFAULT_MODEL)
 
-    # 對話歷史（只傳 role/content 字串，agui 欄位不送入）
-    # 跳過最後一條 user 訊息，由下方帶附件邏輯的 append 統一處理，避免重複送出
-    history: list[dict] = [{"role": "system", "content": AGUI_SYSTEM}]
-    for m in st.session_state.messages[:-1]:
-        role    = m["role"]
-        content = m.get("content") or ""
-        # agent 回傳的是 agui，用摘要文字代替避免 context 爆炸
-        if role == "assistant" and m.get("agui"):
-            agui = m["agui"]
-            comps = agui.get("components", [])
-            summary_parts = []
-            for c in comps:
-                t = c.get("type", "")
-                if t == "markdown":
-                    summary_parts.append(c.get("content","")[:200])
-                elif t == "info_card":
-                    summary_parts.append(f"[{c.get('title','')}] {c.get('description','')[:100]}")
-                elif t == "table":
-                    summary_parts.append(f"[表格：{c.get('title','')}，{len(c.get('rows',[]))} 列]")
-                elif t == "surface":
-                    summary_parts.append(f"[已生成 surface：{c.get('title','')}]")
-                else:
-                    summary_parts.append(f"[{t}]")
-            content = " / ".join(summary_parts) or "(agent 回應)"
-        history.append({"role": role, "content": content})
+    system_prompt = textwrap.dedent("""
+    你是一個 AI 助手，以繁體中文回答。
 
-    # 本次 user content
+    你的任務：
+    1. 清楚、準確地回答使用者的問題
+    2. 提供 0-2 個相關的後續問題建議
+
+    回傳一個 JSON 物件（只包含 answer 和 suggestions，不包含 components）：
+    {
+      "answer": "你的回答文字",
+      "suggestions": ["建議問題1", "建議問題2"]
+    }
+
+    【重要】你的回應必須是合法的 JSON，從 { 開始到 } 結束，無其他文字。
+    """).strip()
+
+    history: list[dict] = [{"role": "system", "content": system_prompt}]
+
+    # 構建訊息內容（支持檔案處理）
     msg_content: list = []
 
     if attached_file:
@@ -236,7 +230,6 @@ def call_openai(user_text: str, attached_file: dict | None = None) -> dict:
             txt = docx_extract_text(p)
             msg_content.append({"type": "text", "text": f"[DOCX 內容]\n{txt[:4000]}\n\n{user_text}"})
         elif ext in {"txt", "md"}:
-            # 純文字 / Markdown：直接讀取內容一起送入
             try:
                 file_text = Path(p).read_text(encoding="utf-8", errors="replace")
             except Exception as e:
@@ -247,7 +240,6 @@ def call_openai(user_text: str, attached_file: dict | None = None) -> dict:
                 "text": f"[{fname} 內容]\n{file_text[:8000]}\n\n{user_text}",
             })
         else:
-            # 其他不支援的格式，至少把檔名告知 LLM
             fname = attached_file.get("name", f"file.{ext}")
             msg_content.append({
                 "type": "text",
@@ -259,36 +251,235 @@ def call_openai(user_text: str, attached_file: dict | None = None) -> dict:
     history.append({"role": "user", "content": msg_content})
 
     # API call
-    resp = client.chat.completions.create(model=model, messages=history, temperature=0.7)
+    resp = client.chat.completions.create(model=model, messages=history, temperature=0.7, max_tokens=2048)
     raw  = resp.choices[0].message.content
 
-    # 清除 ``` 包裝，並直接擷取第一個 { 到最後一個 } 之間的內容
-    # 這樣無論模型怎麼包裝都能正確提取 JSON
+    # 清除 ``` 包裝
     raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.MULTILINE)
     raw = re.sub(r"```\s*$", "", raw, flags=re.MULTILINE)
     raw = raw.strip()
 
-    # 額外保險：直接切出第一個 { 到最後一個 }
+    # 擷取第一個 { 到最後一個 }
     start = raw.find("{")
     end   = raw.rfind("}")
     if start != -1 and end != -1 and end > start:
         raw = raw[start:end + 1]
 
-    # 嘗試 parse
     try:
-        agui_resp = json.loads(raw)
-        # 檢查是否有 surface component
-        has_surface = any(c.get("type") == "surface" for c in agui_resp.get("components", []))
-        # 如果有 surface，自動展開展示欄並調整比例
-        if has_surface:
-            if not st.session_state.stage_expanded:
-                st.session_state.stage_expanded = True
-                st.session_state.split_ratio = 25  # 對話欄 25%, 展示欄 75%
-        return agui_resp
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return {
+            "answer": raw[:500] or "（無法生成回答）",
+            "suggestions": [],
+        }
+
+
+def call_openai_stage2_component_plan(answer_text: str) -> dict:
+    """Stage 2: 決定使用哪些 components"""
+    client = get_client()
+    model  = st.secrets.get("OPENAI_MODEL", DEFAULT_MODEL)
+
+    component_types = "markdown, info_card, data_list, step_process, table, stat_grid, code_block, action_group"
+
+    system_prompt = textwrap.dedent(f"""
+    你是一個 UI 元件選擇專家。
+
+    根據提供的回答文本，決定使用哪些 component 類型最合適。
+
+    可用的 component 類型：
+    - markdown：一般說明、解釋、段落文字、Mermaid 圖表
+    - info_card：重要提示、警告、狀態通知
+    - data_list：key-value 對、屬性清單、詳細資訊
+    - step_process：操作步驟、流程說明、教學
+    - table：比較資料、結構化清單、多欄資訊
+    - stat_grid：KPI、數據摘要、指標展示
+    - code_block：程式碼、指令、設定檔
+    - action_group：建議操作、快速動作清單
+
+    回傳 JSON：
+    {{
+      "components_to_use": ["markdown", "code_block"],
+      "component_descriptions": {{
+        "markdown": "主要解釋文字",
+        "code_block": "程式碼範例"
+      }}
+    }}
+
+    【重要】回應必須是合法的 JSON，從 {{ 開始到 }} 結束。
+    """).strip()
+
+    history = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"回答文本：\n{answer_text}"},
+    ]
+
+    resp = client.chat.completions.create(model=model, messages=history, temperature=0.5, max_tokens=1024)
+    raw  = resp.choices[0].message.content
+
+    raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.MULTILINE)
+    raw = re.sub(r"```\s*$", "", raw, flags=re.MULTILINE)
+    raw = raw.strip()
+
+    start = raw.find("{")
+    end   = raw.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        raw = raw[start:end + 1]
+
+    try:
+        result = json.loads(raw)
+        # 驗證 components_to_use 是有效的類型
+        valid_types = {c.lower() for c in component_types.split(", ")}
+        result["components_to_use"] = [
+            c for c in result.get("components_to_use", [])
+            if c.lower() in valid_types
+        ]
+        if not result["components_to_use"]:
+            result["components_to_use"] = ["markdown"]
+        return result
+    except json.JSONDecodeError:
+        return {
+            "components_to_use": ["markdown"],
+            "component_descriptions": {"markdown": "主要內容"},
+        }
+
+
+def call_openai_stage3_construct(text_content: dict, component_plan: dict) -> dict:
+    """Stage 3: 構建最終的 AGUIResponse"""
+    client = get_client()
+    model  = st.secrets.get("OPENAI_MODEL", DEFAULT_MODEL)
+
+    answer = text_content.get("answer", "")
+    suggestions = text_content.get("suggestions", [])
+    components_to_use = component_plan.get("components_to_use", ["markdown"])
+    component_descriptions = component_plan.get("component_descriptions", {})
+
+    system_prompt = textwrap.dedent("""
+    你是一個 AG-UI 元件構建專家。根據計劃的 component 類型，將文本轉換為結構化 JSON。
+
+    ## 可用 component 類型定義
+
+    ### markdown
+    {"type":"markdown","content":"Markdown 格式文字"}
+    用於：一般說明、解釋、段落文字。
+
+    ### info_card
+    {"type":"info_card","title":"標題","description":"說明文字","variant":"info"}
+    variant：info | warning | success | danger
+
+    ### data_list
+    {"type":"data_list","title":"標題（選填）","items":[{"label":"欄位","value":"內容"}]}
+
+    ### step_process
+    {"type":"step_process","title":"流程標題","steps":[{"title":"步驟1","description":"說明"}]}
+
+    ### table
+    {"type":"table","title":"表格標題","headers":["欄1","欄2"],"rows":[["A","B"]]}
+
+    ### stat_grid
+    {"type":"stat_grid","title":"統計標題","items":[{"label":"指標","value":"數值","description":"說明（選填）"}]}
+
+    ### code_block
+    {"type":"code_block","title":"標題（選填）","language":"python","content":"程式碼"}
+
+    ### action_group
+    {"type":"action_group","title":"動作標題","items":[{"label":"動作","action":"action_id","description":"說明"}]}
+
+    ## 回傳格式
+    必須回傳 JSON 物件，結構如下：
+    {
+      "components": [
+        ... 一或多個 component 物件 ...
+      ],
+      "suggestions": ["建議1", "建議2"]
+    }
+
+    【重要】
+    1. 回應必須是合法的 JSON，從 { 開始到 } 結束，無其他文字。
+    2. suggestions 來自原始回答，直接傳入。
+    3. 根據計劃的 component 類型構建 components 陣列。
+    4. 繁體中文內容。
+    """).strip()
+
+    components_str = ", ".join(components_to_use)
+    descriptions_str = "\n".join([f"- {k}: {v}" for k, v in component_descriptions.items()])
+
+    user_message = f"""請根據以下計劃構建 AG-UI 回應：
+
+計劃的 Component 類型：{components_str}
+
+Component 使用指導：
+{descriptions_str}
+
+要轉換的答案文本：
+{answer}
+
+建議列表（保持不變）：
+{json.dumps(suggestions, ensure_ascii=False)}
+"""
+
+    history = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_message},
+    ]
+
+    resp = client.chat.completions.create(model=model, messages=history, temperature=0.5, max_tokens=4096)
+    raw  = resp.choices[0].message.content
+
+    raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.MULTILINE)
+    raw = re.sub(r"```\s*$", "", raw, flags=re.MULTILINE)
+    raw = raw.strip()
+
+    start = raw.find("{")
+    end   = raw.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        raw = raw[start:end + 1]
+
+    try:
+        result = json.loads(raw)
+        # 確保 suggestions 與原始建議一致
+        result["suggestions"] = suggestions
+        return result
     except json.JSONDecodeError as e:
         return {
             "components": [
-                {"type": "info_card", "title": "解析錯誤", "description": f"模型回傳非 JSON：\n{raw[:500]}", "variant": "danger"}
+                {"type": "markdown", "content": answer}
+            ],
+            "suggestions": suggestions,
+        }
+
+
+# ══════════════════════════════════════════════════════════════
+# 呼叫 OpenAI → AGUIResponse（三階段編排）
+# ══════════════════════════════════════════════════════════════
+def call_openai(user_text: str, attached_file: dict | None = None) -> dict:
+    """三階段生成 AG-UI 回應：(1) 生成文本 (2) 決定 components (3) 構建最終回應"""
+    try:
+        # Stage 1: 生成純文本內容和建議
+        st.write("📝 Stage 1: 生成內容...")
+        text_content = call_openai_stage1_text_content(user_text, attached_file)
+
+        # Stage 2: 決定 component 計劃
+        st.write("🎨 Stage 2: 決定元件類型...")
+        component_plan = call_openai_stage2_component_plan(text_content.get("answer", ""))
+
+        # Stage 3: 構建最終回應
+        st.write("🔨 Stage 3: 構建最終回應...")
+        agui_resp = call_openai_stage3_construct(text_content, component_plan)
+
+        # 檢查是否有 surface component
+        has_surface = any(c.get("type") == "surface" for c in agui_resp.get("components", []))
+        if has_surface:
+            if not st.session_state.stage_expanded:
+                st.session_state.stage_expanded = True
+                st.session_state.split_ratio = 25
+
+        return agui_resp
+
+    except Exception as e:
+        st.error(f"生成回應時出錯：{e}")
+        return {
+            "components": [
+                {"type": "info_card", "title": "處理錯誤", "description": f"無法生成回應：{str(e)[:200]}", "variant": "danger"}
             ],
             "suggestions": [],
         }

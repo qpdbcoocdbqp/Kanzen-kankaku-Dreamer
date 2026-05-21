@@ -1008,9 +1008,101 @@ header[data-testid="stHeader"] {
     display: none !important;
 }
 
-/* 調整主容器頂部間距 */
 .main .block-container {
+    height: 100vh !important;
+    max-height: 100vh !important;
+    overflow: hidden !important;
     padding-top: 1rem !important;
+    padding-bottom: 0.5rem !important;
+    box-sizing: border-box !important;
+}
+
+html, body, [data-testid="stAppViewContainer"] {
+    height: 100vh !important;
+    overflow: hidden !important;
+}
+
+div[data-testid="stHorizontalBlock"] {
+    height: calc(100vh - 32px) !important;
+    max-height: calc(100vh - 32px) !important;
+    overflow: hidden !important;
+}
+
+div[data-testid="column"] {
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+}
+
+/* 訊息氣泡文字換行，避免橫向溢出 */
+.msg-user, .msg-agent {
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+/* 所有 agent bubble 內容也限制寬度 */
+.agent-bubble {
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+    word-break: break-word !important;
+}
+
+/* stForm 不要超出寬度 */
+div[data-testid="stForm"] {
+    overflow-x: hidden !important;
+}
+
+/* 對話串獨立垂直滾動容器 — 高度由 JS 動態計算 */
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .chat-scroll-marker) {
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding-right: 6px;
+}
+
+/* 側邊欄檔案列表獨立垂直滾動容器 */
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .sb-scroll-marker) {
+    max-height: calc(100vh - 250px) !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding-right: 6px;
+}
+
+/* 展示區 Tab 內容獨立垂直滾動容器 */
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .tab-scroll-marker) {
+    max-height: calc(100vh - 230px) !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding-right: 6px;
+}
+
+/* 自定義精美微細化滾動條 */
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .chat-scroll-marker)::-webkit-scrollbar,
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .sb-scroll-marker)::-webkit-scrollbar,
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .tab-scroll-marker)::-webkit-scrollbar {
+    width: 6px;
+}
+
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .chat-scroll-marker)::-webkit-scrollbar-track,
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .sb-scroll-marker)::-webkit-scrollbar-track,
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .tab-scroll-marker)::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 3px;
+}
+
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .chat-scroll-marker)::-webkit-scrollbar-thumb,
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .sb-scroll-marker)::-webkit-scrollbar-thumb,
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .tab-scroll-marker)::-webkit-scrollbar-thumb {
+    background: rgba(102, 126, 234, 0.3);
+    border-radius: 3px;
+}
+
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .chat-scroll-marker)::-webkit-scrollbar-thumb:hover,
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .sb-scroll-marker)::-webkit-scrollbar-thumb:hover,
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .tab-scroll-marker)::-webkit-scrollbar-thumb:hover {
+    background: rgba(102, 126, 234, 0.6);
 }
 
 /* Panel 樣式 */
@@ -1154,6 +1246,57 @@ header[data-testid="stHeader"] {
 </style>
 """, unsafe_allow_html=True)
 
+st.markdown("""
+<script>
+(function() {
+  function fitChatMessageScroll() {
+    var marker = document.querySelector('.chat-scroll-marker');
+    var formMarker = document.querySelector('.chat-form-marker');
+    if (!marker || !formMarker) return;
+
+    var scrollBlock = marker.closest('[data-testid="stVerticalBlock"]');
+    var columnEl = formMarker.closest('[data-testid="column"]');
+    if (!scrollBlock || !columnEl) return;
+
+    var formEl = columnEl.querySelector('[data-testid="stForm"]');
+    var targetTop = null;
+
+    if (formEl) {
+      targetTop = formEl.getBoundingClientRect().top;
+    } else {
+      var formBlock = formMarker.closest('[data-testid="stVerticalBlock"]');
+      if (!formBlock) return;
+      targetTop = formBlock.getBoundingClientRect().top;
+    }
+
+    var scrollTop = scrollBlock.getBoundingClientRect().top;
+    var available = targetTop - scrollTop - 12;
+    if (available < 180) available = 180;
+
+    scrollBlock.style.setProperty('height', available + 'px', 'important');
+    scrollBlock.style.setProperty('max-height', available + 'px', 'important');
+  }
+
+  var observer = new MutationObserver(function() {
+    requestAnimationFrame(fitChatMessageScroll);
+  });
+
+  function init() {
+    fitChatMessageScroll();
+    observer.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener('resize', fitChatMessageScroll);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    setTimeout(init, 150);
+  }
+})();
+</script>
+""", unsafe_allow_html=True)
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 主版面配置
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1193,146 +1336,145 @@ with chat_col:
             st.rerun()
 
     if st.session_state.chat_expanded:
-        # ── 對話欄內容 ──
-        st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+        with st.container():
+            st.markdown('<div class="chat-body-marker"></div>', unsafe_allow_html=True)
+            st.markdown('<div class="chat-container">', unsafe_allow_html=True)
 
-        # ── 訊息串 ──
-        for i, m in enumerate(st.session_state.messages):
-            if m["role"] == "user":
-                st.markdown('<div class="msg-meta">User</div>', unsafe_allow_html=True)
-                content_text = m.get("content", "")
-                chip = m.get("file_chip")
-                chip_html = ""
-                if chip:
-                    chip_html = f'<div class="file-chip">{file_icon(chip["ext"])} {chip["name"]}</div>'
-                st.markdown(
-                    f'<div class="msg-user">{content_text}{chip_html}</div>',
-                    unsafe_allow_html=True,
-                )
+            chat_scroll_container = st.container()
+            with chat_scroll_container:
+                st.markdown('<div class="chat-scroll-marker"></div>', unsafe_allow_html=True)
+                for i, m in enumerate(st.session_state.messages):
+                    if m["role"] == "user":
+                        st.markdown('<div class="msg-meta">User</div>', unsafe_allow_html=True)
+                        content_text = m.get("content", "")
+                        chip = m.get("file_chip")
+                        chip_html = ""
+                        if chip:
+                            chip_html = f'<div class="file-chip">{file_icon(chip["ext"])} {chip["name"]}</div>'
+                        st.markdown(
+                            f'<div class="msg-user">{content_text}{chip_html}</div>',
+                            unsafe_allow_html=True,
+                        )
 
-            else:
-                st.markdown('<div class="msg-meta">Agent</div>', unsafe_allow_html=True)
-                st.markdown('<div class="agent-bubble">', unsafe_allow_html=True)
-                with st.container(border=True):
-                    agui = m.get("agui")
-                    if agui:
-                        render_agui_components(agui.get("components", []))
-                        # suggestions
-                        suggestions = agui.get("suggestions", [])
-                        if suggestions:
-                            st.markdown('<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;">', unsafe_allow_html=True)
-                            sugg_cols = st.columns(len(suggestions))
-                            for si, sugg_text in enumerate(suggestions):
-                                with sugg_cols[si]:
-                                    if st.button(sugg_text, key=f"sugg_{id(agui)}_{si}",
-                                                 use_container_width=True):
-                                        st.session_state.pending_suggestion = sugg_text
-                                        st.rerun()
+                    else:
+                        st.markdown('<div class="msg-meta">Agent</div>', unsafe_allow_html=True)
+                        st.markdown('<div class="agent-bubble">', unsafe_allow_html=True)
+                        with st.container(border=True):
+                            agui = m.get("agui")
+                            if agui:
+                                render_agui_components(agui.get("components", []))
+                                suggestions = agui.get("suggestions", [])
+                                if suggestions:
+                                    st.markdown('<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;">', unsafe_allow_html=True)
+                                    sugg_cols = st.columns(len(suggestions))
+                                    for si, sugg_text in enumerate(suggestions):
+                                        with sugg_cols[si]:
+                                            if st.button(sugg_text, key=f"sugg_{id(agui)}_{si}",
+                                                         use_container_width=True):
+                                                st.session_state.pending_suggestion = sugg_text
+                                                st.rerun()
+                                    st.markdown('</div>', unsafe_allow_html=True)
+                            else:
+                                st.markdown(m.get("content",""))
                         st.markdown('</div>', unsafe_allow_html=True)
-                    else:
-                        st.markdown(m.get("content",""))
-                st.markdown('</div>', unsafe_allow_html=True)
 
-        # ── 思考中：在訊息串最下方顯示，在對話框內 ──
-        thinking_placeholder = st.empty()
-        if st.session_state.thinking:
-            render_thinking_bubble(thinking_placeholder, st.session_state.get("thinking_stages", []))
-            if st.button("🛑 停止生成", key="stop_btn", use_container_width=True):
-                st.session_state.thinking = False
-                st.session_state.thinking_stages = []
-                st.rerun()
+                thinking_placeholder = st.empty()
+                stop_button_placeholder = st.empty()
+                if st.session_state.thinking:
+                    render_thinking_bubble(thinking_placeholder, st.session_state.get("thinking_stages", []))
+                    with stop_button_placeholder.container():
+                        if st.button("🛑 停止生成", key="stop_btn", use_container_width=True):
+                            st.session_state.thinking = False
+                            st.session_state.thinking_stages = []
+                            st.rerun()
 
-        # ── 空白狀態引導卡片 ──
-        if not st.session_state.messages:
-            st.markdown("""
-            <div style="text-align: center; padding: 20px 10px; margin-bottom: 10px;">
-              <h2 style="color: #667eea; margin-bottom: 8px; font-weight: 600;">歡迎使用 Agent UI/UX 平台 🤖</h2>
-              <p style="color: #888; font-size: 0.95em;">我是一個支援多種視覺化元件與 Artifact 生成的 AI 助手。點選下方範例或直接輸入指令開始對話：</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            examples = [
-                "📊 比較 React, Vue 和 Angular 的優缺點",
-                "🧭 設計一個三步驟的軟體部署流程說明",
-                "📈 產生伺服器 CPU 和記憶體指標的數據看板",
-                "🎨 畫一個漂亮的 SVG 圓餅圖"
-            ]
-            
-            cols1 = st.columns(2)
-            cols2 = st.columns(2)
-            for idx, ex in enumerate(examples):
-                target_col = cols1[idx] if idx < 2 else cols2[idx - 2]
-                with target_col:
-                    if st.button(ex, key=f"ex_btn_{idx}", use_container_width=True):
-                        st.session_state.pending_suggestion = ex
-                        st.rerun()
+                guide_container = st.empty()
+                if not st.session_state.messages:
+                    with guide_container.container():
+                        st.markdown("""
+                        <div style="text-align: center; padding: 20px 10px; margin-bottom: 10px;">
+                          <h2 style="color: #667eea; margin-bottom: 8px; font-weight: 600;">歡迎使用 Agent UI/UX 平台 🤖</h2>
+                          <p style="color: #888; font-size: 0.95em;">我是一個支援多種視覺化元件與 Artifact 生成的 AI 助手。點選下方範例或直接輸入指令開始對話：</p>
+                        </div>
+                        """, unsafe_allow_html=True)
 
-        st.markdown('</div>', unsafe_allow_html=True)
+                        examples = [
+                            "📊 比較 React, Vue 和 Angular 的優缺點",
+                            "🧭 設計一個三步驟的軟體部署流程說明",
+                            "📈 產生伺服器 CPU 和記憶體指標的數據看板",
+                            "🎨 畫一個漂亮的 SVG 圓餅圖"
+                        ]
 
-        # ── 檢查 API 金鑰與渲染 Composer ──
+                        cols1 = st.columns(2)
+                        cols2 = st.columns(2)
+                        for idx, ex in enumerate(examples):
+                            target_col = cols1[idx] if idx < 2 else cols2[idx - 2]
+                            with target_col:
+                                if st.button(ex, key=f"ex_btn_{idx}", use_container_width=True):
+                                    st.session_state.pending_suggestion = ex
+                                    st.rerun()
+
+            st.markdown('</div>', unsafe_allow_html=True)
+
         has_api_key = bool(st.secrets.get("OPENAI_API_KEY", "") or st.session_state.get("api_key_override", ""))
-        
-        if not has_api_key:
-            with st.container(border=True):
-                st.markdown("""
-                <div style="padding: 5px; border-radius: 8px;">
-                  <h4 style="margin-top:0; color:#3498db; font-weight: 600;">🔑 設定 OpenAI API 金鑰</h4>
-                  <p style="font-size:0.9em; color:#ddd; margin-bottom: 12px;">本機環境未設定 API Key。請在下方輸入您的 OpenAI API Key，金鑰僅會暫存在您的瀏覽器會話中。</p>
-                </div>
-                """, unsafe_allow_html=True)
-                user_key = st.text_input("輸入 API 金鑰 (API Key)", type="password", placeholder="sk-...", label_visibility="collapsed")
-                if st.button("確認儲存金鑰", use_container_width=True):
-                    if user_key.strip():
-                        st.session_state.api_key_override = user_key.strip()
-                        st.session_state.client = None
-                        st.success("金鑰設定成功！")
-                        st.rerun()
-                    else:
-                        st.error("請輸入有效的金鑰！")
-        else:
-            # ── Composer ──
-            # pending_suggestion 在 form 外先讀取，避免 clear_on_submit 清掉它
-            prefill = st.session_state.get("pending_suggestion", "")
-            with st.form("composer", clear_on_submit=True):
-                attached = st.file_uploader(
-                    "附加檔案",
-                    type=["pdf","docx","doc","png","jpg","jpeg","gif","webp","txt","md"],
-                    label_visibility="collapsed",
-                    disabled=st.session_state.thinking,
-                )
-                user_input = st.text_input(
-                    "輸入指令", value=prefill,
-                    placeholder="輸入指令，或上傳檔案後送出…",
-                    label_visibility="collapsed",
-                    disabled=st.session_state.thinking,
-                )
-                submitted = st.form_submit_button("⬆ Send", use_container_width=True, disabled=st.session_state.thinking)
+        with st.container():
+            st.markdown('<div class="chat-form-marker"></div>', unsafe_allow_html=True)
+            if not has_api_key:
+                with st.container(border=True):
+                    st.markdown("""
+                    <div style="padding: 5px; border-radius: 8px;">
+                      <h4 style="margin-top:0; color:#3498db; font-weight: 600;">🔑 設定 OpenAI API 金鑰</h4>
+                      <p style="font-size:0.9em; color:#ddd; margin-bottom: 12px;">本機環境未設定 API Key。請在下方輸入您的 OpenAI API Key，金鑰僅會暫存在您的瀏覽器會話中。</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    user_key = st.text_input("輸入 API 金鑰 (API Key)", type="password", placeholder="sk-...", label_visibility="collapsed")
+                    if st.button("確認儲存金鑰", use_container_width=True):
+                        if user_key.strip():
+                            st.session_state.api_key_override = user_key.strip()
+                            st.session_state.client = None
+                            st.success("金鑰設定成功！")
+                            st.rerun()
+                        else:
+                            st.error("請輸入有效的金鑰！")
+            else:
+                prefill = st.session_state.get("pending_suggestion", "")
+                with st.form("composer", clear_on_submit=True):
+                    attached = st.file_uploader(
+                        "附加檔案",
+                        type=["pdf","docx","doc","png","jpg","jpeg","gif","webp","txt","md"],
+                        label_visibility="collapsed",
+                        disabled=st.session_state.thinking,
+                    )
+                    user_input = st.text_input(
+                        "輸入指令", value=prefill,
+                        placeholder="輸入指令，或上傳檔案後送出…",
+                        label_visibility="collapsed",
+                        disabled=st.session_state.thinking,
+                    )
+                    submitted = st.form_submit_button("⬆ Send", use_container_width=True, disabled=st.session_state.thinking)
 
-            if submitted and (user_input.strip() or attached):
-                final_text = user_input.strip()
-                st.session_state.pending_suggestion = ""   # 送出後才清
+                if submitted and (user_input.strip() or attached):
+                    final_text = user_input.strip()
+                    st.session_state.pending_suggestion = ""
 
-                # 1. 儲存附件
-                attached_meta = None
-                if attached:
-                    attached_meta = save_upload(attached)
-                    if not any(f["id"] == attached_meta["id"] for f in st.session_state.uploaded_files):
-                        st.session_state.uploaded_files.append(attached_meta)
-                    st.session_state.active_file = attached_meta["id"]
+                    attached_meta = None
+                    if attached:
+                        attached_meta = save_upload(attached)
+                        if not any(f["id"] == attached_meta["id"] for f in st.session_state.uploaded_files):
+                            st.session_state.uploaded_files.append(attached_meta)
+                        st.session_state.active_file = attached_meta["id"]
 
-                chip = {"name": attached_meta["name"], "ext": attached_meta["ext"]} if attached_meta else None
+                    chip = {"name": attached_meta["name"], "ext": attached_meta["ext"]} if attached_meta else None
 
-                # 2. 加入 user 訊息
-                st.session_state.messages.append({
-                    "role": "user",
-                    "content": final_text or f"（已上傳 {attached.name}）",
-                    "file_chip": chip,
-                })
+                    st.session_state.messages.append({
+                        "role": "user",
+                        "content": final_text or f"（已上傳 {attached.name}）",
+                        "file_chip": chip,
+                    })
 
-                # 3. 開啟 thinking 狀態 → rerun 讓氣泡出現
-                st.session_state.thinking_stages = []
-                st.session_state.thinking = True
-                st.rerun()
+                    st.session_state.thinking_stages = []
+                    st.session_state.thinking = True
+                    st.rerun()
 
 # ── 在 thinking 狀態下執行 API 呼叫 ──
 if st.session_state.thinking:
@@ -1405,77 +1547,80 @@ with stage_col:
             st.markdown("**🔍 搜尋與篩選**")
             search_q = st.text_input("搜尋檔名...", key="file_search", label_visibility="collapsed")
             
-            st.markdown("**上傳的檔案**")
-            filtered_uploads = [
-                f for f in st.session_state.uploaded_files
-                if not search_q or search_q.lower() in f["name"].lower()
-            ]
-            if not filtered_uploads:
-                st.caption("無符合檔案")
-            else:
-                for f in filtered_uploads:
-                    is_active = st.session_state.active_file == f["id"]
-                    file_cols = st.columns([5, 1])
-                    with file_cols[0]:
-                        if st.button(f"{file_icon(f['ext'])} {f['name']}", key=f"ub_{f['id']}",
-                                     use_container_width=True,
-                                     type="primary" if is_active else "secondary"):
-                            st.session_state.active_file = f["id"]
-                            st.rerun()
-                    with file_cols[1]:
-                        if st.button("🗑️", key=f"del_ub_{f['id']}", help="刪除此檔案", use_container_width=True):
-                            try:
-                                if Path(f["path"]).exists():
-                                    Path(f["path"]).unlink()
-                            except:
-                                pass
-                            st.session_state.uploaded_files.remove(f)
-                            if st.session_state.active_file == f["id"]:
-                                st.session_state.active_file = None
-                            st.rerun()
+            sb_scroll_container = st.container()
+            with sb_scroll_container:
+                st.markdown('<div class="sb-scroll-marker"></div>', unsafe_allow_html=True)
+                st.markdown("**上傳的檔案**")
+                filtered_uploads = [
+                    f for f in st.session_state.uploaded_files
+                    if not search_q or search_q.lower() in f["name"].lower()
+                ]
+                if not filtered_uploads:
+                    st.caption("無符合檔案")
+                else:
+                    for f in filtered_uploads:
+                        is_active = st.session_state.active_file == f["id"]
+                        file_cols = st.columns([5, 1])
+                        with file_cols[0]:
+                            if st.button(f"{file_icon(f['ext'])} {f['name']}", key=f"ub_{f['id']}",
+                                         use_container_width=True,
+                                         type="primary" if is_active else "secondary"):
+                                st.session_state.active_file = f["id"]
+                                st.rerun()
+                        with file_cols[1]:
+                            if st.button("🗑️", key=f"del_ub_{f['id']}", help="刪除此檔案", use_container_width=True):
+                                try:
+                                    if Path(f["path"]).exists():
+                                        Path(f["path"]).unlink()
+                                except:
+                                    pass
+                                st.session_state.uploaded_files.remove(f)
+                                if st.session_state.active_file == f["id"]:
+                                    st.session_state.active_file = None
+                                st.rerun()
 
-            new_file = st.file_uploader(
-                "新增上傳",
-                type=["pdf","docx","doc","png","jpg","jpeg","gif","webp","txt","md"],
-                key="sb_upload", label_visibility="collapsed",
-            )
-            if new_file:
-                meta = save_upload(new_file)
-                if not any(f["name"] == meta["name"] for f in st.session_state.uploaded_files):
-                    st.session_state.uploaded_files.append(meta)
-                    st.session_state.active_file = meta["id"]
-                    st.rerun()
+                new_file = st.file_uploader(
+                    "新增上傳",
+                    type=["pdf","docx","doc","png","jpg","jpeg","gif","webp","txt","md"],
+                    key="sb_upload", label_visibility="collapsed",
+                )
+                if new_file:
+                    meta = save_upload(new_file)
+                    if not any(f["name"] == meta["name"] for f in st.session_state.uploaded_files):
+                        st.session_state.uploaded_files.append(meta)
+                        st.session_state.active_file = meta["id"]
+                        st.rerun()
 
-            st.divider()
+                st.divider()
 
-            st.markdown("**模型產出**")
-            filtered_generated = [
-                f for f in st.session_state.generated_files
-                if not search_q or search_q.lower() in f["name"].lower()
-            ]
-            if not filtered_generated:
-                st.caption("無符合檔案")
-            else:
-                for f in filtered_generated:
-                    is_active = st.session_state.active_file == f["id"]
-                    file_cols = st.columns([5, 1])
-                    with file_cols[0]:
-                        if st.button(f"{file_icon(f['ext'])} {f['name']}", key=f"gb_{f['id']}",
-                                     use_container_width=True,
-                                     type="primary" if is_active else "secondary"):
-                            st.session_state.active_file = f["id"]
-                            st.rerun()
-                    with file_cols[1]:
-                        if st.button("🗑️", key=f"del_gb_{f['id']}", help="刪除此檔案", use_container_width=True):
-                            try:
-                                if Path(f["path"]).exists():
-                                    Path(f["path"]).unlink()
-                            except:
-                                pass
-                            st.session_state.generated_files.remove(f)
-                            if st.session_state.active_file == f["id"]:
-                                st.session_state.active_file = None
-                            st.rerun()
+                st.markdown("**模型產出**")
+                filtered_generated = [
+                    f for f in st.session_state.generated_files
+                    if not search_q or search_q.lower() in f["name"].lower()
+                ]
+                if not filtered_generated:
+                    st.caption("無符合檔案")
+                else:
+                    for f in filtered_generated:
+                        is_active = st.session_state.active_file == f["id"]
+                        file_cols = st.columns([5, 1])
+                        with file_cols[0]:
+                            if st.button(f"{file_icon(f['ext'])} {f['name']}", key=f"gb_{f['id']}",
+                                         use_container_width=True,
+                                         type="primary" if is_active else "secondary"):
+                                st.session_state.active_file = f["id"]
+                                st.rerun()
+                        with file_cols[1]:
+                            if st.button("🗑️", key=f"del_gb_{f['id']}", help="刪除此檔案", use_container_width=True):
+                                try:
+                                    if Path(f["path"]).exists():
+                                        Path(f["path"]).unlink()
+                                except:
+                                    pass
+                                st.session_state.generated_files.remove(f)
+                                if st.session_state.active_file == f["id"]:
+                                    st.session_state.active_file = None
+                                st.rerun()
 
         # ── Main Viewer ──
         with main_col:
@@ -1497,152 +1642,168 @@ with stage_col:
                 tab_preview, tab_edit, tab_diff, tab_json = st.tabs(["👁 預覽","📄 編輯","⚔️ 比對 (Diff)","📦 JSON"])
 
                 with tab_preview:
-                    if is_image(ext):
-                        st.image(str(path), use_container_width=True)
-                    elif is_pdf(ext):
-                        b64 = file_b64(path)
-                        st.markdown(
-                            f'<iframe src="data:application/pdf;base64,{b64}" '
-                            f'width="100%" height="560" class="pdf-frame"></iframe>',
-                            unsafe_allow_html=True,
-                        )
-                    elif is_docx(ext):
-                        try:
-                            from docx import Document
-                            doc  = Document(str(path))
-                            text = "\n\n".join(p.text for p in doc.paragraphs if p.text.strip())
-                            st.markdown(text or "_（文件內容為空）_")
-                        except Exception as e:
-                            st.error(f"無法解析 DOCX：{e}")
-                    elif ext == "html":
-                        html_src = path.read_text(encoding="utf-8", errors="replace")
-                        st.components.v1.html(html_src, height=560, scrolling=True)
-                    elif ext == "svg":
-                        svg_src = path.read_text(encoding="utf-8", errors="replace")
-                        wrapped_svg = """
-                        <!DOCTYPE html>
-                        <html>
-                        <head>
-                          <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
-                          <style>
-                            html, body {
-                              margin: 0;
-                              padding: 0;
-                              width: 100%;
-                              height: 100%;
-                              overflow: hidden;
-                              background-color: #1e1e1e;
-                            }
-                            #svg-container {
-                              width: 100%;
-                              height: 100%;
-                            }
-                            svg {
-                              width: 100%;
-                              height: 100%;
-                            }
-                          </style>
-                        </head>
-                        <body>
-                          <div id="svg-container">
-                            __SVG_CONTENT__
-                          </div>
-                          <script>
-                            window.onload = function() {
-                              var svgElement = document.querySelector('#svg-container svg');
-                              if (svgElement) {
-                                svgElement.setAttribute('width', '100%');
-                                svgElement.setAttribute('height', '100%');
-                                svgPanZoom(svgElement, {
-                                  zoomEnabled: true,
-                                  controlIconsEnabled: true,
-                                  fit: true,
-                                  center: true,
-                                  minZoom: 0.1,
-                                  maxZoom: 10
-                                });
-                              }
-                            };
-                          </script>
-                        </body>
-                        </html>
-                        """.replace("__SVG_CONTENT__", svg_src)
-                        st.components.v1.html(wrapped_svg, height=560, scrolling=False)
-                    elif ext in {"md","txt"}:
-                        st.markdown(path.read_text(encoding="utf-8", errors="replace"))
-                    elif ext == "json":
-                        try:
-                            st.json(json.loads(path.read_text(encoding="utf-8", errors="replace")))
-                        except json.JSONDecodeError:
-                            st.code(path.read_text(encoding="utf-8", errors="replace"), language="json")
-                    else:
-                        st.info("此檔案類型暫不支援預覽，請下載後開啟。")
+                    tab_scroll_container = st.container()
+                    with tab_scroll_container:
+                        st.markdown('<div class="tab-scroll-marker"></div>', unsafe_allow_html=True)
 
-                    st.download_button(
-                        f"⬇ 下載 {active['name']}",
-                        data=path.read_bytes(),
-                        file_name=active["name"],
-                        mime="application/octet-stream",
-                        use_container_width=True,
-                    )
+                        if is_image(ext):
+                            st.image(str(path), use_container_width=True)
+                        elif is_pdf(ext):
+                            b64 = file_b64(path)
+                            st.markdown(
+                                f'<iframe src="data:application/pdf;base64,{b64}" '
+                                f'width="100%" height="560" class="pdf-frame"></iframe>',
+                                unsafe_allow_html=True,
+                            )
+                        elif is_docx(ext):
+                            try:
+                                from docx import Document
+                                doc  = Document(str(path))
+                                text = "\n\n".join(p.text for p in doc.paragraphs if p.text.strip())
+                                st.markdown(text or "_（文件內容為空）_")
+                            except Exception as e:
+                                st.error(f"無法解析 DOCX：{e}")
+                        elif ext == "html":
+                            html_src = path.read_text(encoding="utf-8", errors="replace")
+                            st.components.v1.html(html_src, height=560, scrolling=True)
+                        elif ext == "svg":
+                            svg_src = path.read_text(encoding="utf-8", errors="replace")
+                            wrapped_svg = """
+                            <!DOCTYPE html>
+                            <html>
+                            <head>
+                              <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
+                              <style>
+                                html, body {
+                                  margin: 0;
+                                  padding: 0;
+                                  width: 100%;
+                                  height: 100%;
+                                  overflow: hidden;
+                                  background-color: #1e1e1e;
+                                }
+                                #svg-container {
+                                  width: 100%;
+                                  height: 100%;
+                                }
+                                svg {
+                                  width: 100%;
+                                  height: 100%;
+                                }
+                              </style>
+                            </head>
+                            <body>
+                              <div id="svg-container">
+                                __SVG_CONTENT__
+                              </div>
+                              <script>
+                                window.onload = function() {
+                                  var svgElement = document.querySelector('#svg-container svg');
+                                  if (svgElement) {
+                                    svgElement.setAttribute('width', '100%');
+                                    svgElement.setAttribute('height', '100%');
+                                    svgPanZoom(svgElement, {
+                                      zoomEnabled: true,
+                                      controlIconsEnabled: true,
+                                      fit: true,
+                                      center: true,
+                                      minZoom: 0.1,
+                                      maxZoom: 10
+                                    });
+                                  }
+                                };
+                              </script>
+                            </body>
+                            </html>
+                            """.replace("__SVG_CONTENT__", svg_src)
+                            st.components.v1.html(wrapped_svg, height=560, scrolling=False)
+                        elif ext in {"md","txt"}:
+                            st.markdown(path.read_text(encoding="utf-8", errors="replace"))
+                        elif ext == "json":
+                            try:
+                                st.json(json.loads(path.read_text(encoding="utf-8", errors="replace")))
+                            except json.JSONDecodeError:
+                                st.code(path.read_text(encoding="utf-8", errors="replace"), language="json")
+                        else:
+                            st.info("此檔案類型暫不支援預覽，請下載後開啟。")
+
+                        st.download_button(
+                            f"⬇ 下載 {active['name']}",
+                            data=path.read_bytes(),
+                            file_name=active["name"],
+                            mime="application/octet-stream",
+                            use_container_width=True,
+                        )
 
                 with tab_edit:
-                    if is_editable_text(ext):
-                        saved_text = path.read_text(encoding="utf-8", errors="replace")
-                        
-                        ace_lang = {
-                            "html": "html",
-                            "css": "css",
-                            "js": "javascript",
-                            "json": "json",
-                            "md": "markdown",
-                            "svg": "xml",
-                        }.get(ext.lower(), "text")
+                    tab_scroll_container = st.container()
+                    with tab_scroll_container:
+                        st.markdown('<div class="tab-scroll-marker"></div>', unsafe_allow_html=True)
 
-                        edited_content = st_ace(
-                            value=saved_text,
-                            language=ace_lang,
-                            theme="monokai",
-                            height=420,
-                            key=f"ace_editor_{active['id']}",
-                        )
+                        if is_editable_text(ext):
+                            saved_text = path.read_text(encoding="utf-8", errors="replace")
 
-                        if edited_content != saved_text:
-                            if st.button("💾 儲存並套用變更", key=f"save_edit_{active['id']}", type="primary", use_container_width=True):
-                                path.write_text(edited_content, encoding="utf-8")
-                                active["ts"] = datetime.now().strftime("%H:%M")
-                                st.success("變更已成功套用！")
-                                st.rerun()
-                    else:
-                        st.info("此類型目前不支援編輯。")
+                            ace_lang = {
+                                "html": "html",
+                                "css": "css",
+                                "js": "javascript",
+                                "json": "json",
+                                "md": "markdown",
+                                "svg": "xml",
+                            }.get(ext.lower(), "text")
+
+                            edited_content = st_ace(
+                                value=saved_text,
+                                language=ace_lang,
+                                theme="monokai",
+                                height=420,
+                                key=f"ace_editor_{active['id']}",
+                            )
+
+                            if edited_content != saved_text:
+                                if st.button("💾 儲存並套用變更", key=f"save_edit_{active['id']}", type="primary", use_container_width=True):
+                                    path.write_text(edited_content, encoding="utf-8")
+                                    active["ts"] = datetime.now().strftime("%H:%M")
+                                    st.success("變更已成功套用！")
+                                    st.rerun()
+                        else:
+                            st.info("此類型目前不支援編輯。")
 
                 with tab_diff:
-                    if is_editable_text(ext):
-                        orig = active.get("original_content", "")
-                        curr = path.read_text(encoding="utf-8", errors="replace")
-                        if not orig:
-                            st.info("此檔案無原始版本記錄，無法進行比對。")
-                        elif orig == curr:
-                            st.success("✨ 目前內容與原始版本完全一致，無任何變更。")
+                    tab_scroll_container = st.container()
+                    with tab_scroll_container:
+                        st.markdown('<div class="tab-scroll-marker"></div>', unsafe_allow_html=True)
+
+                        if is_editable_text(ext):
+                            orig = active.get("original_content", "")
+                            curr = path.read_text(encoding="utf-8", errors="replace")
+                            if not orig:
+                                st.info("此檔案無原始版本記錄，無法進行比對。")
+                            elif orig == curr:
+                                st.success("✨ 目前內容與原始版本完全一致，無任何變更。")
+                            else:
+                                st.markdown("##### ⚔️ 原始版本 vs. 目前變更比對")
+                                diff_html = generate_diff_html(orig, curr)
+                                st.components.v1.html(diff_html, height=520, scrolling=True)
                         else:
-                            st.markdown("##### ⚔️ 原始版本 vs. 目前變更比對")
-                            diff_html = generate_diff_html(orig, curr)
-                            st.components.v1.html(diff_html, height=520, scrolling=True)
-                    else:
-                        st.info("此類型目前不支援版本比對。")
+                            st.info("此類型目前不支援版本比對。")
 
                 with tab_json:
-                    st.json({
-                        "surface": {
-                            "id":         active["id"],
-                            "filename":   active["name"],
-                            "ext":        active["ext"],
-                            "source":     active["source"],
-                            "ts":         active["ts"],
-                            "path":       str(active["path"]),
-                            "size_bytes": path.stat().st_size,
-                        }
-                    })
+                    tab_scroll_container = st.container()
+                    with tab_scroll_container:
+                        st.markdown('<div class="tab-scroll-marker"></div>', unsafe_allow_html=True)
+
+                        st.json({
+                            "surface": {
+                                "id":         active["id"],
+                                "filename":   active["name"],
+                                "ext":        active["ext"],
+                                "source":     active["source"],
+                                "ts":         active["ts"],
+                                "path":       str(active["path"]),
+                                "size_bytes": path.stat().st_size,
+                            }
+                        })
     else:
         # 展示欄折疊時顯示提示
         st.info("展示欄已折疊，點擊上方按鈕展開")

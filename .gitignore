@@ -11,3 +11,6 @@ package-lock.json
 *.zip
 
 dev-*
+.streamlit/
+uploads/
+generated/

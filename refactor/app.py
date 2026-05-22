@@ -1003,36 +1003,48 @@ def render_thinking_bubble(target, stage_lines: list[str]):
 # ══════════════════════════════════════════════════════════════
 st.markdown("""
 <style>
+* {
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+}
+
 /* 隱藏 Streamlit header */
 header[data-testid="stHeader"] {
     display: none !important;
 }
 
-.main .block-container {
-    height: 100vh !important;
-    max-height: 100vh !important;
+html, body, [data-testid="stAppViewContainer"], .main, .main .block-container, div[data-testid="stHorizontalBlock"], div[data-testid="column"], div[data-testid="stVerticalBlock"] {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    min-width: 100% !important;
+    height: 100% !important;
+    min-height: 100% !important;
     overflow: hidden !important;
-    padding-top: 1rem !important;
-    padding-bottom: 0.5rem !important;
-    box-sizing: border-box !important;
 }
 
-html, body, [data-testid="stAppViewContainer"] {
-    height: 100vh !important;
-    overflow: hidden !important;
+[data-testid="stAppViewContainer"] {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 0 !important;
+}
+
+.main, .main .block-container, div[data-testid="stHorizontalBlock"], div[data-testid="column"], div[data-testid="stVerticalBlock"] {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 !important;
+    gap: 0 !important;
 }
 
 div[data-testid="stHorizontalBlock"] {
-    height: calc(100vh - 32px) !important;
-    max-height: calc(100vh - 32px) !important;
-    overflow: hidden !important;
+    flex-direction: row !important;
 }
 
-div[data-testid="column"] {
-    height: 100% !important;
-    max-height: 100% !important;
-    overflow: hidden !important;
+section[data-testid="stSidebar"] {
+    display: none !important;
 }
+
 
 /* 訊息氣泡文字換行，避免橫向溢出 */
 .msg-user, .msg-agent {

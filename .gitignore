@@ -1,16 +1,23 @@
+# cache
 .env
 .vscode
 .kiro
+*.pyc
 uv.lock
 package-lock.json
-*.pyc
+.streamlit/
+*.backup
+
+# data
+uploads/
+generated/
+
+# file
 *.ttf
 *.svg
 *.bat
 *.sh
 *.zip
 
+# custom
 dev-*
-.streamlit/
-uploads/
-generated/

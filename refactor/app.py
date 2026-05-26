@@ -122,38 +122,206 @@ def is_editable_text(ext: str) -> bool:
 
 def generate_diff_html(original: str, current: str) -> str:
     import difflib
-    diff = difflib.HtmlDiff()
-    html = diff.make_file(
-        original.splitlines(),
-        current.splitlines(),
-        fromdesc="原始版本 (Original)",
-        todesc="目前版本 (Current)",
-        context=True,
-        numlines=3
-    )
-    custom_style = """
-    <style>
-        table.diff {font-family:Consolas, monospace; border: 1px solid rgba(128, 128, 128, 0.2); font-size: 0.9em; width: 100%;}
-        .diff_header {background-color:#f0f0f0; color: #888;}
-        td.diff_header {text-align:right; width: 40px; padding: 0 5px;}
-        .diff_next {background-color:#e0e0e0; display: none;} /* Hide next buttons to look cleaner */
-        .diff_add {background-color:#ddffdd; color: #006600;}
-        .diff_chg {background-color:#ffffdd; color: #666600;}
-        .diff_sub {background-color:#ffdddd; color: #cc0000;}
-        
-        /* Dark mode compatibility */
-        @media (prefers-color-scheme: dark) {
-            body { background-color: #1e1e1e; color: #eee; }
-            table.diff { border-color: rgba(128, 128, 128, 0.2); }
-            .diff_header { background-color: #2b2b2b; color: #666; }
-            .diff_next { background-color: #222; }
-            .diff_add { background-color: #1b4d1b; color: #aaffaa; }
-            .diff_chg { background-color: #4d4d1b; color: #ffffaa; }
-            .diff_sub { background-color: #4d1b1b; color: #ffaaaa; }
-        }
-    </style>
-    """
-    html = html.replace("</head>", f"{custom_style}</head>")
+
+    orig_lines = original.splitlines()
+    curr_lines = current.splitlines()
+
+    unified = list(difflib.unified_diff(
+        orig_lines, curr_lines,
+        fromfile="原始版本 (Original)",
+        tofile="目前版本 (Current)",
+        lineterm="",
+        n=3,
+    ))
+
+    def escape(s):
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    rows_html = []
+    line_no_old = 0
+    line_no_new = 0
+
+    if not unified:
+        rows_html.append(
+            '<tr><td class="ln"></td><td class="ln"></td>'
+            '<td class="ctx">（無差異，兩版本完全相同）</td></tr>'
+        )
+    else:
+        for line in unified:
+            if line.startswith("---") or line.startswith("+++"):
+                rows_html.append(
+                    f'<tr><td class="ln"></td><td class="ln"></td>'
+                    f'<td class="hdr">{escape(line)}</td></tr>'
+                )
+            elif line.startswith("@@"):
+                # 解析 hunk header 取得行號
+                import re
+                m = re.search(r"-(\d+)(?:,\d+)? \+(\d+)", line)
+                if m:
+                    line_no_old = int(m.group(1)) - 1
+                    line_no_new = int(m.group(2)) - 1
+                rows_html.append(
+                    f'<tr><td class="ln"></td><td class="ln"></td>'
+                    f'<td class="hunk">{escape(line)}</td></tr>'
+                )
+            elif line.startswith("-"):
+                line_no_old += 1
+                rows_html.append(
+                    f'<tr><td class="ln del">{line_no_old}</td><td class="ln"></td>'
+                    f'<td class="del">− {escape(line[1:])}</td></tr>'
+                )
+            elif line.startswith("+"):
+                line_no_new += 1
+                rows_html.append(
+                    f'<tr><td class="ln"></td><td class="ln add">{line_no_new}</td>'
+                    f'<td class="add">＋ {escape(line[1:])}</td></tr>'
+                )
+            else:
+                line_no_old += 1
+                line_no_new += 1
+                rows_html.append(
+                    f'<tr><td class="ln">{line_no_old}</td><td class="ln">{line_no_new}</td>'
+                    f'<td class="ctx">　 {escape(line[1:] if line.startswith(" ") else line)}</td></tr>'
+                )
+
+    rows = "\n".join(rows_html)
+
+    html = f"""<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<style>
+  html, body {{
+    margin: 0;
+    padding: 0;
+    background: #faf8f4;
+    color: #1d2a2a;
+    font-family: Consolas, "Noto Sans Mono", monospace;
+    font-size: 13px;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }}
+
+  .diff-wrap {{
+    padding: 8px;
+  }}
+
+  table {{
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }}
+
+  /* 行號欄 */
+  td.ln {{
+    width: 38px;
+    min-width: 38px;
+    max-width: 38px;
+    text-align: right;
+    padding: 2px 6px 2px 4px;
+    color: #aaa;
+    border-right: 1px solid #e8e0d4;
+    user-select: none;
+    vertical-align: top;
+    font-size: 11px;
+    line-height: 1.6;
+  }}
+
+  /* 內容欄：自動換行，不橫向溢出 */
+  td:last-child {{
+    padding: 2px 10px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    vertical-align: top;
+    line-height: 1.6;
+  }}
+
+  /* 各行類型配色 */
+  tr.del-row td.ln   {{ background: #fff0f0; color: #c0392b; }}
+  tr.del-row td:last-child {{ background: #fff0f0; color: #c0392b; }}
+
+  tr.add-row td.ln   {{ background: #f0fff4; color: #27ae60; }}
+  tr.add-row td:last-child {{ background: #f0fff4; color: #27ae60; }}
+
+  tr.ctx-row td:last-child {{ background: #faf8f4; color: #555; }}
+
+  tr.hunk-row td:last-child {{
+    background: #eef4ff;
+    color: #3b5bdb;
+    font-size: 11px;
+    padding: 4px 10px;
+  }}
+
+  tr.hdr-row td:last-child {{
+    background: #f0ebe1;
+    color: #888;
+    font-size: 11px;
+    padding: 4px 10px;
+    border-bottom: 1px solid #e8e0d4;
+  }}
+
+  /* 行間隔線 */
+  tr {{ border-bottom: 1px solid rgba(216, 205, 189, 0.25); }}
+
+  /* 圖例 */
+  .legend {{
+    display: flex;
+    gap: 16px;
+    padding: 6px 10px;
+    background: #f0ebe1;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    font-size: 11px;
+    color: #666;
+    flex-wrap: wrap;
+  }}
+  .legend span {{ display: flex; align-items: center; gap: 4px; }}
+  .dot {{ width: 10px; height: 10px; border-radius: 3px; display: inline-block; }}
+  .dot-del {{ background: #fde8e8; border: 1px solid #c0392b; }}
+  .dot-add {{ background: #d4f0d4; border: 1px solid #27ae60; }}
+  .dot-ctx {{ background: #faf8f4; border: 1px solid #ccc; }}
+</style>
+</head>
+<body>
+<div class="diff-wrap">
+  <div class="legend">
+    <span><span class="dot dot-del"></span> 刪除</span>
+    <span><span class="dot dot-add"></span> 新增</span>
+    <span><span class="dot dot-ctx"></span> 未變更</span>
+  </div>
+  <table>
+    <colgroup>
+      <col style="width:38px">
+      <col style="width:38px">
+      <col>
+    </colgroup>
+    <tbody>
+{rows}
+    </tbody>
+  </table>
+</div>
+</body>
+</html>"""
+
+    # 把 class 名稱注入 tr（因為是字串拼接，直接替換 class 標記）
+    html = html.replace('<td class="del">', '<td class="del">')  # no-op, classes already on td
+    # 修正 tr class
+    import re as _re
+    def _fix_tr(m):
+        inner = m.group(1)
+        if 'class="del"' in inner or 'class="ln del"' in inner:
+            return f'<tr class="del-row">{inner}</tr>'
+        elif 'class="add"' in inner or 'class="ln add"' in inner:
+            return f'<tr class="add-row">{inner}</tr>'
+        elif 'class="hunk"' in inner:
+            return f'<tr class="hunk-row">{inner}</tr>'
+        elif 'class="hdr"' in inner:
+            return f'<tr class="hdr-row">{inner}</tr>'
+        else:
+            return f'<tr class="ctx-row">{inner}</tr>'
+
+    html = _re.sub(r'<tr>(.*?)</tr>', _fix_tr, html, flags=_re.DOTALL)
     return html
 
 def detect_artifact_kind(text: str, language: str = "") -> tuple[str, str] | None:
@@ -523,6 +691,7 @@ def call_openai_stage3_construct(text_content: dict, component_plan: dict) -> di
     8. 若答案含有數值、統計、狀態摘要，轉成 stat_grid。
     9. markdown 最多只作為少量補充段落，避免單一 markdown component 承載全部內容。
     10. 繁體中文內容。
+    11. 【禁止重複】每段內容只能出現在一個 component 中。若已放入 info_card.description，就不可再用 markdown 重複相同文字；若已放入 data_list 或 step_process，就不可再用 markdown 重複列出相同條目。每個 component 必須承載不同的資訊片段。
     """).strip()
 
     components_str = ", ".join(components_to_use)
@@ -679,7 +848,20 @@ def normalize_agui_response(agui_resp: dict, fallback_answer: str) -> dict:
     ]
 
     if non_markdown and markdown_parts:
-        agui_resp["components"] = components
+        # 已有結構化元件時，只保留真正補充性的 markdown（短段落）
+        # 避免 Stage 3 把相同內容同時塞進 info_card.description 和 markdown.content
+        filtered_markdown = [
+            c for c in components
+            if c.get("type") != "markdown" or (
+                len(c.get("content", "").strip()) <= 280
+                and not any(
+                    c.get("content", "").strip()[:80] in other.get("description", "")
+                    or c.get("content", "").strip()[:80] in other.get("content", "")
+                    for other in non_markdown
+                )
+            )
+        ]
+        agui_resp["components"] = filtered_markdown
         return agui_resp
 
     if non_markdown:
@@ -854,12 +1036,18 @@ def render_agui_components(components: list):
         # ── info_card ──
         elif t == "info_card":
             variant = comp.get("variant", "info")
-            color_map = {"info":"#3498db","warning":"#f39c12","success":"#27ae60","danger":"#e74c3c"}
-            bg = color_map.get(variant, "#3498db")
+            # 大地色系配色
+            color_map = {
+                "info": {"border": "#0f766e", "bg": "#d7efe8"},
+                "warning": {"border": "#b45309", "bg": "#fff8eb"},
+                "success": {"border": "#15803d", "bg": "#dcfce7"},
+                "danger": {"border": "#dc2626", "bg": "#fee2e2"}
+            }
+            colors = color_map.get(variant, color_map["info"])
             st.markdown(f"""
-<div style="border-left:4px solid {bg}; padding:12px; background: var(--secondary-background-color); border: 1px solid rgba(128, 128, 128, 0.15); margin:8px 0; border-radius:4px;">
-  <div style="font-weight:600; font-size:1em; color:{bg};">{comp.get('title','')}</div>
-  <div style="margin-top:6px; color: var(--text-color);">{comp.get('description','')}</div>
+<div style="border-left:4px solid {colors['border']}; padding:14px; background:{colors['bg']}; border: 1px solid rgba(216, 205, 189, 0.4); margin:12px 0; border-radius:16px;">
+  <div style="font-weight:700; font-size:1em; color:{colors['border']}; margin-bottom:6px;">{comp.get('title','')}</div>
+  <div style="color:#1d2a2a; font-size:13px; line-height:1.6;">{comp.get('description','')}</div>
 </div>""", unsafe_allow_html=True)
 
         # ── data_list ──
@@ -999,10 +1187,24 @@ def render_thinking_bubble(target, stage_lines: list[str]):
 </div>""", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════
-# 自定義 CSS（去除 header）
+# 自定義 CSS（溫暖大地色系 - 奶茶色調）
 # ══════════════════════════════════════════════════════════════
 st.markdown("""
 <style>
+:root {
+    --bg: #f4efe6;
+    --panel: rgba(255, 250, 242, 0.92);
+    --panel-strong: #fffdf8;
+    --ink: #1d2a2a;
+    --muted: #61706f;
+    --line: #d8cdbd;
+    --accent: #0f766e;
+    --accent-soft: #d7efe8;
+    --warn: #b45309;
+    --shadow: 0 20px 50px rgba(60, 42, 20, 0.12);
+    --user-msg: #1f2937;
+}
+
 * {
     margin: 0 !important;
     padding: 0 !important;
@@ -1012,6 +1214,15 @@ st.markdown("""
 /* 隱藏 Streamlit header */
 header[data-testid="stHeader"] {
     display: none !important;
+}
+
+/* 全局背景 - 雙層徑向漸層 + 基底色 */
+html, body {
+    background: radial-gradient(circle at top left, rgba(15, 118, 110, 0.12), transparent 28%),
+                radial-gradient(circle at bottom right, rgba(180, 83, 9, 0.08), transparent 24%),
+                var(--bg) !important;
+    font-family: "Segoe UI", "Noto Sans TC", sans-serif !important;
+    color: var(--ink) !important;
 }
 
 html, body, [data-testid="stAppViewContainer"], .main, .main .block-container, div[data-testid="stHorizontalBlock"], div[data-testid="column"], div[data-testid="stVerticalBlock"] {
@@ -1044,7 +1255,6 @@ div[data-testid="stHorizontalBlock"] {
 section[data-testid="stSidebar"] {
     display: none !important;
 }
-
 
 /* 訊息氣泡文字換行，避免橫向溢出 */
 .msg-user, .msg-agent {
@@ -1090,7 +1300,7 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .t
     padding-right: 6px;
 }
 
-/* 自定義精美微細化滾動條 */
+/* 自定義滾動條 - 大地色系 */
 div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .chat-scroll-marker)::-webkit-scrollbar,
 div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .sb-scroll-marker)::-webkit-scrollbar,
 div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .tab-scroll-marker)::-webkit-scrollbar {
@@ -1100,29 +1310,29 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .t
 div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .chat-scroll-marker)::-webkit-scrollbar-track,
 div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .sb-scroll-marker)::-webkit-scrollbar-track,
 div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .tab-scroll-marker)::-webkit-scrollbar-track {
-    background: rgba(0, 0, 0, 0.05);
+    background: rgba(216, 205, 189, 0.2);
     border-radius: 3px;
 }
 
 div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .chat-scroll-marker)::-webkit-scrollbar-thumb,
 div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .sb-scroll-marker)::-webkit-scrollbar-thumb,
 div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .tab-scroll-marker)::-webkit-scrollbar-thumb {
-    background: rgba(102, 126, 234, 0.3);
+    background: rgba(15, 118, 110, 0.3);
     border-radius: 3px;
 }
 
 div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .chat-scroll-marker)::-webkit-scrollbar-thumb:hover,
 div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .sb-scroll-marker)::-webkit-scrollbar-thumb:hover,
 div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .tab-scroll-marker)::-webkit-scrollbar-thumb:hover {
-    background: rgba(102, 126, 234, 0.6);
+    background: rgba(15, 118, 110, 0.5);
 }
 
-/* Panel 樣式 */
+/* Panel Header - 大地色系漸層 */
 .panel-hdr {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #0f766e, #115e59);
     color: white;
-    padding: 12px 16px;
-    border-radius: 8px 8px 0 0;
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--line);
     font-weight: 600;
     margin-bottom: 0;
     display: flex;
@@ -1135,29 +1345,39 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .t
     font-size: 1.1em;
 }
 
-/* 訊息氣泡 */
+/* 訊息標籤 */
 .msg-meta {
-    font-size: 0.85em;
-    color: #888;
-    margin-bottom: 4px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 8px;
+    font-weight: 700;
 }
 
+/* User 訊息氣泡 - 深灰色 */
 .msg-user {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    align-self: flex-end;
+    background: var(--user-msg);
     color: white;
-    padding: 12px 16px;
-    border-radius: 18px;
+    padding: 14px 16px;
+    border-radius: 20px;
+    border-bottom-right-radius: 8px;
     margin-bottom: 12px;
-    max-width: 80%;
+    max-width: 92%;
+    box-shadow: 0 8px 24px rgba(52, 39, 23, 0.06);
 }
 
+/* Agent 訊息氣泡 - 奶白色 */
 .msg-agent {
-    background: var(--secondary-background-color);
-    color: var(--text-color);
+    background: var(--panel-strong);
+    color: var(--ink);
     padding: 14px 18px;
-    border-radius: 18px;
+    border-radius: 20px;
+    border-bottom-left-radius: 8px;
     margin-bottom: 12px;
-    border: 1px solid rgba(128, 128, 128, 0.2);
+    border: 1px solid rgba(216, 205, 189, 0.85);
+    box-shadow: 0 8px 24px rgba(52, 39, 23, 0.06);
 }
 
 .agent-bubble {
@@ -1165,40 +1385,44 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .t
 }
 
 .agent-bubble div[data-testid="stVerticalBlockBorderWrapper"] {
-    background: var(--secondary-background-color);
-    border: 1px solid rgba(128, 128, 128, 0.2);
-    border-radius: 18px;
+    background: var(--panel-strong);
+    border: 1px solid rgba(216, 205, 189, 0.85);
+    border-radius: 20px;
+    border-bottom-left-radius: 8px;
     padding: 14px 18px;
 }
 
+/* 檔案標籤 */
 .file-chip {
     display: inline-flex;
     align-items: center;
-    background: rgba(128, 128, 128, 0.15);
-    color: var(--text-color);
+    background: rgba(216, 205, 189, 0.25);
+    color: var(--ink);
     padding: 4px 10px;
     border-radius: 12px;
     font-size: 0.9em;
     margin-top: 6px;
-    border: 1px solid rgba(128, 128, 128, 0.1);
+    border: 1px solid rgba(216, 205, 189, 0.4);
 }
 
+/* 思考氣泡 */
 .thinking-bubble {
-    background: var(--secondary-background-color);
-    color: var(--text-color);
+    background: var(--panel-strong);
+    color: var(--ink);
     padding: 12px 18px;
-    border-radius: 18px;
+    border-radius: 20px;
     display: inline-flex;
     flex-direction: column;
     align-items: flex-start;
-    border: 1px solid rgba(128, 128, 128, 0.2);
+    border: 1px solid rgba(216, 205, 189, 0.85);
     margin-bottom: 12px;
+    box-shadow: 0 8px 24px rgba(52, 39, 23, 0.06);
 }
 
 .thinking-dot {
     width: 8px;
     height: 8px;
-    background: #667eea;
+    background: var(--accent);
     border-radius: 50%;
     margin: 0 3px;
     animation: thinking 1.4s infinite ease-in-out both;
@@ -1212,48 +1436,106 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="element-container"] .t
   40% { transform: scale(1); opacity: 1; }
 }
 
+/* PDF 預覽框 */
 .pdf-frame {
-    border: 1px solid #444;
-    border-radius: 8px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: white;
 }
 
-/* 折疊按鈕樣式 */
+/* 折疊按鈕 */
 .toggle-btn {
-    background: rgba(255,255,255,0.1);
-    border: 1px solid rgba(255,255,255,0.2);
-    color: white;
+    background: rgba(15, 118, 110, 0.1);
+    border: 1px solid rgba(15, 118, 110, 0.2);
+    color: var(--accent);
     padding: 4px 12px;
-    border-radius: 6px;
+    border-radius: 999px;
     cursor: pointer;
     font-size: 0.9em;
     transition: all 0.2s;
 }
 
 .toggle-btn:hover {
-    background: rgba(255,255,255,0.2);
+    background: rgba(15, 118, 110, 0.2);
 }
 
-/* 拖動手柄樣式 */
-.resize-handle {
-    width: 8px;
-    background: #444;
-    cursor: col-resize;
-    position: relative;
-    transition: background 0.2s;
+/* Streamlit 元件覆寫 */
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    background: var(--panel) !important;
+    border: 1px solid var(--line) !important;
+    border-radius: 16px !important;
 }
 
-.resize-handle:hover {
-    background: #667eea;
+/* 按鈕樣式覆寫 */
+.stButton button {
+    background: var(--accent) !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 14px !important;
+    font-weight: 600 !important;
+    transition: all 0.2s !important;
 }
 
-.resize-handle::before {
-    content: '⋮';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    color: #888;
-    font-size: 1.2em;
+.stButton button:hover {
+    background: #115e59 !important;
+    box-shadow: 0 4px 12px rgba(15, 118, 110, 0.25) !important;
+}
+
+.stButton button[kind="secondary"] {
+    background: rgba(216, 205, 189, 0.3) !important;
+    color: var(--ink) !important;
+}
+
+.stButton button[kind="secondary"]:hover {
+    background: rgba(216, 205, 189, 0.5) !important;
+}
+
+/* 輸入框樣式 */
+input, textarea {
+    background: white !important;
+    border: 1px solid var(--line) !important;
+    border-radius: 14px !important;
+    color: var(--ink) !important;
+}
+
+input:focus, textarea:focus {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.1) !important;
+}
+
+/* Tab 樣式 */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 10px;
+}
+
+.stTabs [data-baseweb="tab"] {
+    background: rgba(255, 255, 255, 0.7) !important;
+    border: 1px solid var(--line) !important;
+    border-radius: 14px !important;
+    color: var(--muted) !important;
+    padding: 10px 14px !important;
+}
+
+.stTabs [aria-selected="true"] {
+    background: var(--accent-soft) !important;
+    border-color: rgba(15, 118, 110, 0.25) !important;
+    color: #0b5c55 !important;
+    font-weight: 700 !important;
+}
+
+/* Metric 卡片 */
+div[data-testid="stMetric"] {
+    background: white !important;
+    border: 1px solid var(--line) !important;
+    border-radius: 18px !important;
+    padding: 16px !important;
+}
+
+/* Dataframe 樣式 */
+div[data-testid="stDataFrame"] {
+    border: 1px solid var(--line) !important;
+    border-radius: 14px !important;
+    overflow: hidden !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -1405,8 +1687,8 @@ with chat_col:
                     with guide_container.container():
                         st.markdown("""
                         <div style="text-align: center; padding: 20px 10px; margin-bottom: 10px;">
-                          <h2 style="color: #667eea; margin-bottom: 8px; font-weight: 600;">歡迎使用 Agent UI/UX 平台 🤖</h2>
-                          <p style="color: #888; font-size: 0.95em;">我是一個支援多種視覺化元件與 Artifact 生成的 AI 助手。點選下方範例或直接輸入指令開始對話：</p>
+                          <h2 style="color: #0f766e; margin-bottom: 8px; font-weight: 600;">歡迎使用 Agent UI/UX 平台 🤖</h2>
+                          <p style="color: #61706f; font-size: 0.95em;">我是一個支援多種視覺化元件與 Artifact 生成的 AI 助手。點選下方範例或直接輸入指令開始對話：</p>
                         </div>
                         """, unsafe_allow_html=True)
 
@@ -1435,8 +1717,8 @@ with chat_col:
                 with st.container(border=True):
                     st.markdown("""
                     <div style="padding: 5px; border-radius: 8px;">
-                      <h4 style="margin-top:0; color:#3498db; font-weight: 600;">🔑 設定 OpenAI API 金鑰</h4>
-                      <p style="font-size:0.9em; color:#ddd; margin-bottom: 12px;">本機環境未設定 API Key。請在下方輸入您的 OpenAI API Key，金鑰僅會暫存在您的瀏覽器會話中。</p>
+                      <h4 style="margin-top:0; color:#0f766e; font-weight: 600;">🔑 設定 OpenAI API 金鑰</h4>
+                      <p style="font-size:0.9em; color:#61706f; margin-bottom: 12px;">本機環境未設定 API Key。請在下方輸入您的 OpenAI API Key，金鑰僅會暫存在您的瀏覽器會話中。</p>
                     </div>
                     """, unsafe_allow_html=True)
                     user_key = st.text_input("輸入 API 金鑰 (API Key)", type="password", placeholder="sk-...", label_visibility="collapsed")
@@ -1677,7 +1959,7 @@ with stage_col:
                                 st.error(f"無法解析 DOCX：{e}")
                         elif ext == "html":
                             html_src = path.read_text(encoding="utf-8", errors="replace")
-                            st.components.v1.html(html_src, height=560, scrolling=True)
+                            st.iframe(html_src, height=560)
                         elif ext == "svg":
                             svg_src = path.read_text(encoding="utf-8", errors="replace")
                             wrapped_svg = """
@@ -1728,7 +2010,7 @@ with stage_col:
                             </body>
                             </html>
                             """.replace("__SVG_CONTENT__", svg_src)
-                            st.components.v1.html(wrapped_svg, height=560, scrolling=False)
+                            st.iframe(wrapped_svg, height=560)
                         elif ext in {"md","txt"}:
                             st.markdown(path.read_text(encoding="utf-8", errors="replace"))
                         elif ext == "json":
@@ -1796,7 +2078,7 @@ with stage_col:
                             else:
                                 st.markdown("##### ⚔️ 原始版本 vs. 目前變更比對")
                                 diff_html = generate_diff_html(orig, curr)
-                                st.components.v1.html(diff_html, height=520, scrolling=True)
+                                st.iframe(diff_html, height=520)
                         else:
                             st.info("此類型目前不支援版本比對。")
 

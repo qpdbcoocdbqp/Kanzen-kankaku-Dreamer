@@ -1,10 +1,12 @@
 import json
 import difflib
 import io
-from typing import List, Dict, Any
-
+import yaml
 import streamlit as st
 from html import escape
+from typing import List, Dict, Any
+
+
 def pretty_text_from_input(raw: str) -> str:
     if not raw or not raw.strip():
         return ""
@@ -13,7 +15,6 @@ def pretty_text_from_input(raw: str) -> str:
         return json.dumps(parsed, indent=2, ensure_ascii=False)
     except Exception:
         return raw.strip()
-
 
 def compute_unified_lines(old_text: str, new_text: str) -> List[Dict[str, Any]]:
     old_lines = old_text.splitlines()
@@ -82,7 +83,6 @@ def compute_unified_lines(old_text: str, new_text: str) -> List[Dict[str, Any]]:
 
     return out
 
-
 def compute_split_view(old_text: str, new_text: str) -> List[Dict[str, Any]]:
     old_lines = old_text.splitlines()
     new_lines = new_text.splitlines()
@@ -138,7 +138,6 @@ def compute_split_view(old_text: str, new_text: str) -> List[Dict[str, Any]]:
 
     return result
 
-
 def fold_lines_unified(lines: List[Dict[str, Any]], context_size: int = 3, show_all: bool = False) -> List[Dict[str, Any]]:
     if show_all or len(lines) <= 15:
         return [dict(l, is_fold_marker=False) for l in lines]
@@ -172,7 +171,6 @@ def fold_lines_unified(lines: List[Dict[str, Any]], context_size: int = 3, show_
         out.append({'is_fold_marker': True, 'text': f"... 折疊了 {folded_count} 行未變更 ..."})
 
     return out
-
 
 def fold_lines_split(rows: List[Dict[str, Any]], context_size: int = 3, show_all: bool = False) -> List[Dict[str, Any]]:
     if show_all or len(rows) <= 15:
@@ -210,7 +208,6 @@ def fold_lines_split(rows: List[Dict[str, Any]], context_size: int = 3, show_all
 
     return out
 
-
 def build_diff_text(lines: List[Dict[str, Any]]) -> str:
     buf = io.StringIO()
     for ln in lines:
@@ -221,7 +218,6 @@ def build_diff_text(lines: List[Dict[str, Any]]) -> str:
         else:
             buf.write(f"  {ln.get('text','')}\n")
     return buf.getvalue()
-
 
 def render_unified_html(lines: List[Dict[str, Any]]) -> str:
     css = (
@@ -267,7 +263,6 @@ def render_unified_html(lines: List[Dict[str, Any]]) -> str:
 
     rows_html.append('</div>')
     return '\n'.join(rows_html)
-
 
 def render_split_html(rows: List[Dict[str, Any]]) -> str:
     css = (
@@ -326,30 +321,33 @@ def render_split_html(rows: List[Dict[str, Any]]) -> str:
     rows_html.append('</div></div>')
     return '\n'.join(rows_html)
 
-def main():
-    st.set_page_config(page_title="Git-style JSON Structural Diff", layout='wide')
+with open("refactor/prompt.yaml", "r", encoding="utf-8") as f:
+    prompts = yaml.safe_load(f)
 
-    st.title("Git-style JSON Structural Diff")
+SEMANTIC_MERGE_PROMPT = prompts["semantic_merge_prompt"]
+
+def main():
+    st.set_page_config(page_title="Diff Display", layout='wide')
+
+    st.title("Diff Display")
 
     # Top segmented toggle for view mode (unified / split)
     if 'view_mode' not in st.session_state:
-        st.session_state.view_mode = 'unified'
+        st.session_state.view_mode = "unified"
+    if 'merged_content' not in st.session_state:
+        st.session_state.merged_content = "test file"
 
-    button_cols = st.columns([1, 1])
+    button_cols = st.columns([1, 1, 1])
     if button_cols[0].button('單欄 (Unified)'):
-        st.session_state.view_mode = 'unified'
+        st.session_state.view_mode = "unified" 
     if button_cols[1].button('雙欄 (Split)'):
-        st.session_state.view_mode = 'split'
+        st.session_state.view_mode = "split"
 
     with st.sidebar:
         st.header("Inputs")
         st.markdown("**Upload files (drag & drop supported)**")
         orig_file = st.file_uploader("Original file", type=['json', 'txt'], key='orig_file')
         merged_file = st.file_uploader("Merged file", type=['json', 'txt'], key='merged_file')
-
-        # Fallback text areas for manual paste; file content (if provided) takes precedence
-        original_textarea = st.text_area("Original JSON / text", height=200, key='orig')
-        merged_textarea = st.text_area("Merged JSON / text", height=200, key='merged')
 
         # Read uploaded files if present
         if orig_file is not None:
@@ -358,58 +356,55 @@ def main():
                 original_raw = raw_bytes.decode('utf-8')
             except Exception:
                 # fallback to text area on error
-                original_raw = original_textarea
+                original_raw = ""
         else:
-            original_raw = original_textarea
+            original_raw = ""
 
         if merged_file is not None:
             try:
                 raw_bytes = merged_file.read()
                 merged_raw = raw_bytes.decode('utf-8')
             except Exception:
-                merged_raw = merged_textarea
+                merged_raw = ""
         else:
-            merged_raw = merged_textarea
+            merged_raw = ""
         st.markdown("---")
         show_all = st.checkbox("Show full structure (no folding)", value=False)
 
     old_text = pretty_text_from_input(original_raw)
     new_text = pretty_text_from_input(merged_raw)
 
-    if not old_text and not new_text:
+    if not old_text or not new_text:
         st.info("暫時無相關數據可供比對。請先在左側填入履歷 JSON 並執行整合。")
         return
 
     unified = compute_unified_lines(old_text, new_text)
     split = compute_split_view(old_text, new_text)
+    st.session_state.merged_content = build_diff_text(unified)
+    if button_cols[2].download_button("下載 Diff 結果",  data=st.session_state.merged_content, file_name='diff_result.txt'):
+        pass
 
     view_mode = st.session_state.view_mode
 
-    if view_mode == 'unified':
+    if view_mode == "unified":
         visible = fold_lines_unified(unified, context_size=3, show_all=show_all)
         # Stats
         additions = sum(1 for l in unified if l.get('added'))
         deletions = sum(1 for l in unified if l.get('removed'))
-
-        col1, col2 = st.columns([1, 4])
-        with col1:
-            st.markdown(f"**+{additions}** additions   **-{deletions}** deletions")
-            st.download_button("Download Diff", data=build_diff_text(unified), file_name='diff.txt')
-        with col2:
-            html = render_unified_html(visible)
-            st.markdown(html, unsafe_allow_html=True)
-
+        html = render_unified_html(visible)
     else:
         visible = fold_lines_split(split, context_size=3, show_all=show_all)
         additions = sum(1 for r in split if r['right'].get('type') == 'added')
         deletions = sum(1 for r in split if r['left'].get('type') == 'removed')
-
-        st.markdown(f"**+{additions}** additions   **-{deletions}** deletions")
-        st.download_button("Download Diff", data=build_diff_text(unified), file_name='diff.txt')
-
         html = render_split_html(visible)
-        st.markdown(html, unsafe_allow_html=True)
+
+    st.markdown(f"**+{additions}** additions   **-{deletions}** deletions")    
+    st.markdown(html, unsafe_allow_html=True)
 
 
 if __name__ == '__main__':
     main()
+
+
+
+

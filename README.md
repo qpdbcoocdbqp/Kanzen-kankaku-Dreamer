@@ -19,6 +19,18 @@ Test agent driven interface.  Playing with Kanzen kankaku Dreamer [完全感覚D
 * [ag-ui-protocol/ag-ui](https://github.com/ag-ui-protocol/ag-ui)
 * [CopilotKit/CopilotKit](https://github.com/CopilotKit/CopilotKit)
 
+
+## Open design
+
+```bash
+git clone https://github.com/nexu-io/open-design.git
+cd open-design/deploy
+cp .env.example .env
+echo "OD_API_TOKEN=$(openssl rand -hex 32)" >> .env
+docker compose up -d
+# open http://localhost:7456
+```
+
 ## Agent UI
 
 * **Setup**

@@ -7,6 +7,7 @@ uv.lock
 package-lock.json
 .streamlit/
 *.backup
+open_design_data
 
 # data
 uploads/

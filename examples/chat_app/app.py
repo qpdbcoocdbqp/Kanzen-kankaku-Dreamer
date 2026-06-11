@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import time
 from datetime import datetime
 from openai import OpenAI
 import utils
@@ -104,66 +105,131 @@ with st.sidebar:
                         st.session_state.current_session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
                         st.session_state.messages = []
                     st.rerun()
-
 # Main Window
 st.markdown('<div class="main-title">AI Chat Assistant</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-title">基於 Streamlit & OpenAI API 實作的對話介面</div>', unsafe_allow_html=True)
 
-# Load existing messages if list is empty but file exists (e.g. initial reload/load click)
-if not st.session_state.messages and st.session_state.current_session_id:
-    st.session_state.messages = utils.load_session(st.session_state.current_session_id)
+# Create tabs
+tab1, tab2 = st.tabs(["💬 Chat 對話", "📁 文件管理"])
 
-# Render Chat History
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+with tab1:
+    # Get available files
+    uploaded_files = utils.list_uploaded_files()
+    selected_files = st.multiselect(
+        "📚 選擇參考文件 (選取的檔案內容將作為上下文併入對話)",
+        options=uploaded_files,
+        help="勾選後，AI 會讀取檔案內容並根據該內容進行回答"
+    )
 
-# Chat Input
-if prompt := st.chat_input("請輸入您的問題..."):
-    # 1. Display user message
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    utils.save_session(st.session_state.current_session_id, st.session_state.messages)
+    # Load existing messages if list is empty but file exists (e.g. initial reload/load click)
+    if not st.session_state.messages and st.session_state.current_session_id:
+        st.session_state.messages = utils.load_session(st.session_state.current_session_id)
 
-    # 2. Generate assistant response
-    with st.chat_message("assistant"):
-        message_placeholder = st.empty()
-        full_response = ""
+    # Render Chat History
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # Chat Input
+    if prompt := st.chat_input("請輸入您的問題..."):
+        # 1. Display user message
+        with st.chat_message("user"):
+            st.markdown(prompt)
         
-        try:
-            # Set up client
-            client = OpenAI(
-                api_key=api_key if api_key else "mock-key",
-                base_url=base_url if base_url else None
-            )
-            
-            # API Call with streaming
-            stream = client.chat.completions.create(
-                model=model_name,
-                messages=[
-                    {"role": m["role"], "content": m["content"]}
-                    for m in st.session_state.messages
-                ],
-                stream=True,
-            )
-            
-            for chunk in stream:
-                if chunk.choices and chunk.choices[0].delta.content is not None:
-                    full_response += chunk.choices[0].delta.content
-                    message_placeholder.markdown(full_response + "▌")
-            
-            message_placeholder.markdown(full_response)
-            
-            # Append & Save
-            st.session_state.messages.append({"role": "assistant", "content": full_response})
-            utils.save_session(st.session_state.current_session_id, st.session_state.messages)
-            
-            # Rerun sidebar listing update
-            st.rerun()
+        # Save original message (without context injection) to history
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        utils.save_session(st.session_state.current_session_id, st.session_state.messages)
 
-        except Exception as e:
-            st.error(f"呼叫 API 時發生錯誤: {e}")
-            if not api_key:
-                st.info("💡 提示：請在側邊欄填寫正確的 OpenAI API Key 與 Base URL。")
+        # 2. Generate assistant response
+        with st.chat_message("assistant"):
+            message_placeholder = st.empty()
+            full_response = ""
+            
+            try:
+                # Set up client
+                client = OpenAI(
+                    api_key=api_key if api_key else "mock-key",
+                    base_url=base_url if base_url else None
+                )
+                
+                # Context Injection
+                messages_to_send = []
+                # Construct history, but for the last user message, we append context if selected
+                for m in st.session_state.messages[:-1]:
+                    messages_to_send.append({"role": m["role"], "content": m["content"]})
+                
+                # Check if there are selected files
+                if selected_files:
+                    context_parts = []
+                    for fname in selected_files:
+                        fpath = os.path.join(utils.UPLOADS_DIR, fname)
+                        content = utils.parse_file_content(fpath)
+                        context_parts.append(f"--- 檔案: {fname} ---\n{content}\n")
+                    
+                    full_context = "\n".join(context_parts)
+                    injected_prompt = f"以下是參考資料：\n{full_context}\n請根據這些資料回答問題：{prompt}"
+                    messages_to_send.append({"role": "user", "content": injected_prompt})
+                else:
+                    messages_to_send.append({"role": "user", "content": prompt})
+                
+                # API Call with streaming
+                stream = client.chat.completions.create(
+                    model=model_name,
+                    messages=messages_to_send,
+                    stream=True,
+                )
+                
+                for chunk in stream:
+                    if chunk.choices and chunk.choices[0].delta.content is not None:
+                        full_response += chunk.choices[0].delta.content
+                        message_placeholder.markdown(full_response + "▌")
+                
+                message_placeholder.markdown(full_response)
+                
+                # Append & Save
+                st.session_state.messages.append({"role": "assistant", "content": full_response})
+                utils.save_session(st.session_state.current_session_id, st.session_state.messages)
+                
+                # Rerun sidebar listing update
+                st.rerun()
+
+            except Exception as e:
+                st.error(f"呼叫 API 時發生錯誤: {e}")
+                if not api_key:
+                    st.info("💡 提示：請在側邊欄填寫正確的 OpenAI API Key 與 Base URL。")
+
+with tab2:
+    st.markdown('<div class="sidebar-header">📂 上傳新文件</div>', unsafe_allow_html=True)
+    uploaded_file = st.file_uploader(
+        "選擇檔案 (支援 .pdf, .docx, .txt, .md)", 
+        type=['pdf', 'docx', 'txt', 'md'],
+        label_visibility="collapsed"
+    )
+    if uploaded_file is not None:
+        last_uploaded = st.session_state.get("last_uploaded_file")
+        if last_uploaded != uploaded_file.name:
+            with st.spinner("檔案上傳中..."):
+                saved_path = utils.save_uploaded_file(uploaded_file)
+                st.session_state["last_uploaded_file"] = uploaded_file.name
+                st.success(f"成功上傳檔案: {uploaded_file.name}")
+                time.sleep(1) # short pause to show success
+                st.rerun()
+    else:
+        if "last_uploaded_file" in st.session_state:
+            del st.session_state["last_uploaded_file"]
+            
+    st.markdown('<div class="sidebar-header">📋 已上傳文件列表</div>', unsafe_allow_html=True)
+    files = utils.list_uploaded_files()
+    if not files:
+        st.info("目前沒有已上傳的文件。")
+    else:
+        for f in files:
+            col1, col2 = st.columns([0.85, 0.15])
+            with col1:
+                st.text(f"📄 {f}")
+            with col2:
+                if st.button("🗑️", key=f"del_file_{f}", help=f"刪除 {f}"):
+                    utils.delete_uploaded_file(f)
+                    st.success(f"已刪除 {f}")
+                    time.sleep(0.5)
+                    st.rerun()

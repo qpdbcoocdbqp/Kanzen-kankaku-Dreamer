@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Sparkles, User, MessageSquare, Settings, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Send, Sparkles, User, MessageSquare, Settings, ChevronRight, ChevronLeft, ChevronUp, ChevronDown } from 'lucide-react';
 import { AGUIRenderer } from './components/AGUIRenderer';
 import { SkeletonLoader } from './components/SkeletonLoader';
 import { SettingsModal } from './components/SettingsModal';
@@ -178,6 +178,28 @@ const App: React.FC = () => {
     (SAMPLE_MODEL_RESPONSE.data?.components.find(c => c.type === ComponentType.SURFACE) as SurfaceComponent) || null
   );
   const [isStagePanelOpen, setIsStagePanelOpen] = useState(false);
+  const [stagePanelWidth, setStagePanelWidth] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return parseInt(localStorage.getItem('agui_stage_width') || '600', 10);
+    }
+    return 600;
+  });
+  const [isResizing, setIsResizing] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isHeaderVisible, setIsHeaderVisible] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('agui_header_visible') !== 'false';
+    }
+    return true;
+  });
+  const [footerHeight, setFooterHeight] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return parseInt(localStorage.getItem('agui_footer_height') || '160', 10);
+    }
+    return 160;
+  });
+  const [isFooterResizing, setIsFooterResizing] = useState(false);
+  const appRef = useRef<HTMLDivElement>(null);
 
   // Persistence State
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -197,6 +219,14 @@ const App: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    localStorage.setItem('agui_theme_mode', isDarkMode ? 'dark' : 'light');
+  }, [isDarkMode]);
+
+  useEffect(() => {
+    localStorage.setItem('agui_theme_color', themeColor);
+  }, [themeColor]);
+
+  useEffect(() => {
     // Apply Dark Mode Class
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
@@ -209,6 +239,76 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('agui_theme_color', themeColor);
   }, [themeColor]);
+
+  useEffect(() => {
+    localStorage.setItem('agui_stage_width', stagePanelWidth.toString());
+  }, [stagePanelWidth]);
+
+  useEffect(() => {
+    localStorage.setItem('agui_header_visible', isHeaderVisible.toString());
+  }, [isHeaderVisible]);
+
+  useEffect(() => {
+    localStorage.setItem('agui_footer_height', footerHeight.toString());
+  }, [footerHeight]);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing || !containerRef.current) return;
+
+      const container = containerRef.current;
+      const rect = container.getBoundingClientRect();
+      const newWidth = rect.right - e.clientX;
+
+      // Min 300px for stage, max 1000px
+      if (newWidth >= 300 && newWidth <= 1000) {
+        setStagePanelWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
+
+  useEffect(() => {
+    const handleFooterMouseMove = (e: MouseEvent) => {
+      if (!isFooterResizing || !appRef.current) return;
+
+      const app = appRef.current;
+      const rect = app.getBoundingClientRect();
+      const newHeight = rect.bottom - e.clientY;
+
+      // Min 100px, max 500px for footer
+      if (newHeight >= 100 && newHeight <= 500) {
+        setFooterHeight(newHeight);
+      }
+    };
+
+    const handleFooterMouseUp = () => {
+      setIsFooterResizing(false);
+    };
+
+    if (isFooterResizing) {
+      document.addEventListener('mousemove', handleFooterMouseMove);
+      document.addEventListener('mouseup', handleFooterMouseUp);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleFooterMouseMove);
+      document.removeEventListener('mouseup', handleFooterMouseUp);
+    };
+  }, [isFooterResizing]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -289,7 +389,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-app-dark flex flex-col transition-colors duration-300">
+    <div className="min-h-screen bg-slate-50 dark:bg-app-dark flex flex-col transition-colors duration-300" ref={appRef}>
       <SettingsModal
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
@@ -300,28 +400,47 @@ const App: React.FC = () => {
       />
 
       {/* Header */}
-      <header className="bg-white dark:bg-app-card border-b border-slate-200 dark:border-app-border sticky top-0 z-30 shadow-sm transition-colors duration-300">
-        <div className="max-w-3xl mx-auto px-4 h-16 flex items-center justify-between">
+      <header className={`bg-white dark:bg-app-card border-b border-slate-200 dark:border-app-border sticky top-0 z-30 shadow-sm transition-all duration-300 ${isHeaderVisible ? 'h-16 opacity-100' : 'h-0 opacity-0 border-b-0'} overflow-hidden`}>
+        <div className="max-w-full px-4 h-16 flex items-center justify-between relative">
           <div className="flex items-center gap-3">
             <div className={`w-10 h-10 bg-gradient-to-br from-${themeColor}-500 to-${themeColor}-700 rounded-xl flex items-center justify-center text-white shadow-md`}>
               <Sparkles className="w-6 h-6" />
             </div>
             <div>
               <h1 className="font-bold text-slate-900 dark:text-slate-100 leading-tight">AG-UI Q&A Assistant</h1>
-              {/* <p className="text-xs text-slate-500 dark:text-slate-400">Powered by Google Gemini & ADK</p> */}
             </div>
           </div>
-          <button
-            onClick={() => setShowSettings(true)}
-            className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-700 text-slate-500 dark:text-slate-400 transition-colors"
-          >
-            <Settings className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsHeaderVisible(!isHeaderVisible)}
+              className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-700 text-slate-500 dark:text-slate-400 transition-colors"
+              title={isHeaderVisible ? 'Hide header' : 'Show header'}
+            >
+              <ChevronUp className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => setShowSettings(true)}
+              className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-700 text-slate-500 dark:text-slate-400 transition-colors"
+            >
+              <Settings className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </header>
 
+      {/* Header Collapse Indicator */}
+      {!isHeaderVisible && (
+        <button
+          onClick={() => setIsHeaderVisible(true)}
+          className="absolute top-0 left-1/2 transform -translate-x-1/2 p-1 rounded-b-lg bg-white dark:bg-app-card border border-t-0 border-slate-200 dark:border-app-border hover:bg-slate-50 dark:hover:bg-zinc-700 transition-colors text-slate-600 dark:text-slate-400 z-20"
+          title="Show header"
+        >
+          <ChevronDown className="w-4 h-4" />
+        </button>
+      )}
+
       {/* Main Content */}
-      <main className="flex-1 w-full max-w-7xl mx-auto p-4 pb-32 relative">
+      <main className="flex-1 w-full max-w-7xl mx-auto p-4 relative" style={{ height: `calc(100vh - ${isHeaderVisible ? 64 : 32}px - ${footerHeight}px - 32px)` }}>
         {messages.length === 0 ? (
           // Greeting Page
           <div className="h-full flex flex-col items-center justify-center py-20 animate-fadeIn">
@@ -350,9 +469,9 @@ const App: React.FC = () => {
           </div>
         ) : (
           // Chat & Stage Layout
-          <div className="flex gap-4 h-[calc(100vh-280px)]">
+          <div className="flex gap-0 h-[calc(100vh-280px)]" ref={containerRef}>
             {/* Chat Panel */}
-            <div className="flex-1 flex flex-col space-y-8 overflow-y-auto pr-4">
+            <div className={`flex flex-col space-y-8 overflow-y-auto pr-6 pl-0 transition-all duration-0 ${isStagePanelOpen ? '' : 'flex-1'}`} style={{ flex: isStagePanelOpen ? `1` : 'unset' }}>
               {messages.map((msg) => (
                 <div key={msg.id} className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
                   {/* Avatar */}
@@ -386,13 +505,21 @@ const App: React.FC = () => {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Stage Panel Toggle */}
+            {/* Resizable Divider */}
+            {activeSurface && isStagePanelOpen && (
+              <div
+                onMouseDown={() => setIsResizing(true)}
+                className={`w-1 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors ${isResizing ? 'bg-slate-400 dark:bg-slate-500' : ''} cursor-col-resize shrink-0`}
+              />
+            )}
+
+            {/* Stage Panel */}
             {activeSurface && (
-              <div className={`transition-all duration-300 ease-in-out overflow-hidden flex flex-col ${isStagePanelOpen ? 'w-[420px]' : 'w-12'}`}>
+              <div className={`flex flex-col overflow-hidden transition-all duration-300 ease-in-out ${isStagePanelOpen ? '' : 'w-12'}`} style={{ width: isStagePanelOpen ? `${stagePanelWidth}px` : '48px' }}>
                 {/* Toggle Button */}
                 <button
                   onClick={() => setIsStagePanelOpen(!isStagePanelOpen)}
-                  className={`absolute top-4 ${isStagePanelOpen ? 'right-4' : 'right-0'} z-10 p-2 rounded-lg bg-white dark:bg-app-card border border-slate-200 dark:border-app-border hover:bg-slate-50 dark:hover:bg-zinc-700 transition-colors shadow-sm text-slate-600 dark:text-slate-400`}
+                  className={`absolute top-4 z-10 p-2 rounded-lg bg-white dark:bg-app-card border border-slate-200 dark:border-app-border hover:bg-slate-50 dark:hover:bg-zinc-700 transition-colors shadow-sm text-slate-600 dark:text-slate-400 ${isStagePanelOpen ? 'right-4' : '-right-6'}`}
                   title={isStagePanelOpen ? 'Collapse' : 'Expand'}
                 >
                   {isStagePanelOpen ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
@@ -400,7 +527,7 @@ const App: React.FC = () => {
 
                 {/* Stage Content */}
                 {isStagePanelOpen && (
-                  <div className="flex-1 min-h-0">
+                  <div className="flex-1 min-h-0 p-4">
                     <StagePanel
                       surface={activeSurface}
                       onClose={() => setActiveSurface(null)}
@@ -414,8 +541,14 @@ const App: React.FC = () => {
         )}
       </main>
 
+      {/* Footer Resize Handle */}
+      <div
+        onMouseDown={() => setIsFooterResizing(true)}
+        className={`h-1 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors ${isFooterResizing ? 'bg-slate-400 dark:bg-slate-500' : ''} cursor-row-resize w-full shrink-0`}
+      />
+
       {/* Input Area */}
-      <div className="sticky bottom-0 bg-white/80 dark:bg-[#1e1e1e]/80 backdrop-blur-md border-t border-slate-200 dark:border-app-border p-4 shadow-lg z-40 transition-colors duration-300">
+      <div className="bg-white/80 dark:bg-[#1e1e1e]/80 backdrop-blur-md border-t border-slate-200 dark:border-app-border p-4 shadow-lg z-40 transition-colors duration-300 overflow-y-auto" style={{ height: `${footerHeight}px` }}>
         <div className="max-w-3xl mx-auto mb-3">
           <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400 mb-2 px-1">
             Tool 格式測試（emit_agui_response）

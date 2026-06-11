@@ -1,13 +1,16 @@
 # cache
-*.pyc
 .env
 .vscode
 .kiro
+*.pyc
 uv.lock
 package-lock.json
 config.yaml
 
 # files
+.streamlit/
+*.backup
+# file
 *.ttf
 *.svg
 *.bat

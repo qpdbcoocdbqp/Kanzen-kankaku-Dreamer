@@ -1,0 +1,14 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      # 讓上傳/產出的檔案持久保存在本機
+      - ./uploads:/app/uploads
+      - ./generated:/app/generated
+      # secrets（本機開發用）
+      - ./.streamlit/secrets.toml:/app/.streamlit/secrets.toml:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped

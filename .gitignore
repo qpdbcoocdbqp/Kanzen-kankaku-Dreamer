@@ -1,13 +1,26 @@
+# cache
+*.pyc
 .env
 .vscode
 .kiro
 uv.lock
 package-lock.json
-*.pyc
+config.yaml
+
+# files
 *.ttf
 *.svg
 *.bat
 *.sh
 *.zip
 
+# folder
+refactor/
+generated/
+sessions/
+uploads/
+open_design_data/
+
+# custom
 dev-*
+spec.md

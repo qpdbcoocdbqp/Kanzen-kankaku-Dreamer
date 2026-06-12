@@ -2,14 +2,19 @@
 .env
 .vscode
 .kiro
-*.pyc
+.streamlit/
 uv.lock
 package-lock.json
 config.yaml
-
-# files
-.streamlit/
+*.pyc
 *.backup
+
+# data
+open_design_data/
+uploads/
+generated/
+source/
+
 # file
 *.ttf
 *.svg

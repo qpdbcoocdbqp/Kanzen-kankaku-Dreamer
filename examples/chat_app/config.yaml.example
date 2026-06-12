@@ -1,0 +1,4 @@
+# AI Chat Assistant Configuration
+openai_api_key: ""
+openai_base_url: "http://localhost/v1"
+openai_model_name: ""

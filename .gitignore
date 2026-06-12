@@ -2,14 +2,15 @@
 .env
 .vscode
 .kiro
-*.pyc
+.streamlit/
 uv.lock
 package-lock.json
-.streamlit/
+config.yaml
+*.pyc
 *.backup
-open_design_data
 
 # data
+open_design_data/
 uploads/
 generated/
 source/
@@ -21,5 +22,13 @@ source/
 *.sh
 *.zip
 
+# folder
+refactor/
+generated/
+sessions/
+uploads/
+open_design_data/
+
 # custom
 dev-*
+spec.md
